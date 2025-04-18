@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  agent1:
+    build: .
+    container_name: p2p_agent_1
+    networks:
+      - p2p_net
+    environment:
+      - MAX_PEERS=2
+    ports:
+      - "5001:5000/tcp"
+      - "5001:5000/udp"
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+
+  agent2:
+    build: .
+    container_name: p2p_agent_2
+    networks:
+      - p2p_net
+    environment:
+      - BOOTSTRAP_IP=p2p_agent_1
+      - MAX_PEERS=2
+    ports:
+      - "5002:5000/tcp"
+      - "5002:5000/udp"
+    depends_on:
+      - agent1
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+
+  agent3:
+    build: .
+    container_name: p2p_agent_3
+    networks:
+      - p2p_net
+    environment:
+      - BOOTSTRAP_IP=p2p_agent_1
+      - MAX_PEERS=2
+    ports:
+      - "5003:5000/tcp"
+      - "5003:5000/udp"
+    depends_on:
+      - agent1
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+
+networks:
+  p2p_net:
+    driver: bridge
