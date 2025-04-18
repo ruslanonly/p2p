@@ -36,9 +36,8 @@ func main() {
 	if (bootstrapIP == "") {
 		a.Start(nil)
 	} else {
-		a.Start(&agent.Address{
+		a.Start(&agent.BootstrapAddress{
 			IP: bootstrapIP,
-			Port: 0,
 		})
 	}
 }

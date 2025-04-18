@@ -2,18 +2,38 @@ package agent
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-type PeerInfo struct {
-	IP string
-	IsSuper   bool
+func sendJSONUDP(addr string, msg Message) {
+	conn, err := net.Dial("udp", addr)
+	if err != nil {
+		log.Printf("⚠️ Ошибка отправки на %s: %v", addr, err)
+		return
+	}
+	defer conn.Close()
+
+	data, _ := json.Marshal(msg)
+	conn.Write(append(data, '\n'))
+}
+
+func sendJSONTCP(conn net.Conn, msg Message) {
+    messageBytes, err := json.Marshal(msg)
+    if err != nil {
+        log.Printf("❌ Ошибка при сериализации сообщения в JSON: %v", err)
+        return
+    }
+
+    _, err = conn.Write(append(messageBytes, '\n'))
+    if err != nil {
+        log.Printf("❌ Ошибка при отправке сообщения через TCP: %v", err)
+    }
 }
 
 type Agent struct {
@@ -29,26 +49,8 @@ type AgentConfiguration struct {
 	MaxPeers int
 }
 
-type Address struct {
+type BootstrapAddress struct {
 	IP string
-	Port int
-}
-
-func GetAddress(addrStr string) (Address, error) {
-	parts := strings.Split(addrStr, ":")
-	if len(parts) != 2 {
-		return Address{}, fmt.Errorf("неверный формат адреса: %s", addrStr)
-	}
-
-	port, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return Address{}, fmt.Errorf("не удалось распарсить порт: %s", parts[1])
-	}
-
-	return Address{
-		IP:   parts[0],
-		Port: port,
-	}, nil
 }
 
 func New(configuration AgentConfiguration) *Agent {
@@ -90,13 +92,13 @@ func (a *Agent) getSuperpeers() map[string]PeerInfo {
 	return superpeers
 }
 
-func (a *Agent) Start(bootstrapAddress *Address) {
+func (a *Agent) Start(bootstrapAddress *BootstrapAddress) {
 	go a.listenUDP()
 	a.listenTCP(bootstrapAddress)
 }
 
 
-func (a *Agent) listenTCP(bootstrapAddress *Address) {
+func (a *Agent) listenTCP(bootstrapAddress *BootstrapAddress) {
 	addr := fmt.Sprintf("%s:%d", a.host, 55000)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -124,100 +126,87 @@ func (a *Agent) listenTCP(bootstrapAddress *Address) {
 
 func (a *Agent) handleTCPConnection(conn net.Conn) {
 	defer conn.Close()
-	reader := bufio.NewReader(conn)
-	message, err := reader.ReadString('\n')
 
+	reader := bufio.NewReader(conn)
+	messageStr, err := reader.ReadString('\n')
 	if err != nil {
 		log.Printf("Ошибка чтения: %v", err)
 		return
 	}
 
-	message = strings.TrimSpace(message)
-	remoteIP, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+	var msg Message
+	if err := json.Unmarshal([]byte(messageStr), &msg); err != nil {
+		log.Printf("❌ Ошибка при разборе JSON-сообщения: %v", err)
+		return
+	}
+
+	senderIP, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
 		log.Printf("Ошибка обработки адреса удаленного хоста: %v", err)
 		return
 	}
 
-	log.Printf("📩 Получено TCP сообщение от %s: %s", remoteIP, message)
+	log.Printf("📩 Получено сообщение от %s: %+v", senderIP, msg)
 
-	switch {
-	case strings.HasPrefix(message, "CONNECT_REQUEST"):
+	switch msg.Type {
+	case ConnectRequestMessageType:
 		a.peersMutex.Lock()
 		if len(a.peers) < a.maxPeers {
-			a.peers[remoteIP] = PeerInfo{
-				IP: remoteIP,
+			a.peers[senderIP] = PeerInfo{
+				IP:      senderIP,
 				IsSuper: false,
 			}
 			a.peersMutex.Unlock()
-			fmt.Fprintf(conn, "CONNECTED %s\n", a.host)
-			log.Printf("✅ Подключён новый узел: %s", remoteIP)
+
+			sendJSONTCP(conn, Message{Type: ConnectedMessageType})
+
+			log.Printf("✅ Подключён новый узел: %s", senderIP)
 		} else {
 			a.peersMutex.Unlock()
+			a.waitingPeers = append(a.waitingPeers, senderIP)
 
-			a.waitingPeers = append(a.waitingPeers, remoteIP)
-			fmt.Fprintf(conn, "WAIT\n")
-			log.Printf("⏳ Добавлен в очередь ожидания: %s", remoteIP)
+			sendJSONTCP(conn, Message{Type: WaitMessageType})
+
+			log.Printf("⏳ Добавлен в очередь ожидания: %s", senderIP)
 
 			superpeers := a.getSuperpeers()
-
-			if (len(superpeers) > 0) {
-				log.Printf("⏳ Выполняется поиск суперпира среди собственных")
+			if len(superpeers) > 0 {
+				log.Printf("🔍 Поиск суперпира среди текущих")
 
 				for super := range superpeers {
-					conn, err := net.Dial("udp", super)
-					if err != nil {
-						continue
-					}
-
-					defer conn.Close()
-
-					_, err = conn.Write([]byte("FIND_SUPERPEER\n"))
-
-					if err != nil {
-						log.Printf("Ошибка отправки UDP: %v", err)
-					}
+					sendJSONUDP(super, Message{Type: FindSuperpeerMessageType})
 				}
 			} else {
-				log.Printf("⏳ Инициируются выборы нового суперпира среди своих пиров")
-
+				log.Printf("🗳 Инициация выборов нового суперпира")
 				peers := a.getPeers()
-
 				for peerIP := range peers {
-					remoteAddr := &net.UDPAddr{
-						IP: net.ParseIP(peerIP),
+					addr := &net.UDPAddr{
+						IP:   net.ParseIP(peerIP),
 						Port: 55001,
 					}
 
-					conn, err := net.Dial("udp", remoteAddr.String())
-
-					if err != nil {
-						log.Println(remoteAddr.IP, remoteAddr.Port, remoteAddr.String())
-						continue
-					}
-					
-					defer conn.Close()
-
-					log.Printf("Отправка ELECT_NEW_SUPERPEER узлу %s", peerIP)
-
-					_, err = conn.Write([]byte("ELECT_NEW_SUPERPEER %s\n"))
-
-					if err != nil {
-						log.Printf("Ошибка отправки UDP: %v", err)
-					}
+					sendJSONUDP(addr.String(), Message{Type: ElectNewSuperpeerMessageType})
 				}
 			}
-	}
-	case message == "DISCOVER_PEERS":
+		}
+
+	case DiscoverPeersMessageType:
 		a.peersMutex.Lock()
-		peersList := make([]string, 0, len(a.peers))
-		for peer := range a.peers {
-			peersList = append(peersList, peer)
+		peersList := make(DiscoverPeersResponse, 0, len(a.peers))
+		for _, peerInfo := range a.peers {
+			peersList = append(peersList, peerInfo)
 		}
 		a.peersMutex.Unlock()
-		response := strings.Join(peersList, "\n") + "\n"
-		conn.Write([]byte(response))
-		log.Printf("📨 Отправлен список узлов: %s", response)
+
+		body, err := json.Marshal(peersList)
+		if err != nil {
+			log.Printf("Ошибка маршалинга структуры: %v", err)
+			return
+		}
+
+		conn.Write(body)
+	default:
+		log.Printf("⚠️ Неизвестный тип сообщения: %s", msg.Type)
 	}
 }
 
@@ -250,8 +239,14 @@ func (a *Agent) listenUDP() {
 }
 
 func (a *Agent) handleUDPMessage(message string, remoteAddr *net.UDPAddr) {
-	switch {
-		case message == "FIND_FREE_SUPERPEER": {
+	var msg Message
+	if err := json.Unmarshal([]byte(message), &msg); err != nil {
+		log.Printf("❌ Ошибка при разборе JSON: %v", err)
+		return
+	}
+
+	switch msg.Type {
+		case FindFreeSuperpeerMessageType: {
 			log.Println("🔎 Обработка FIND_FREE_SUPERPEER")
 
 			if len(a.peers) < a.maxPeers {
@@ -259,64 +254,48 @@ func (a *Agent) handleUDPMessage(message string, remoteAddr *net.UDPAddr) {
 				log.Printf("📤 Отправка FREE_SUPERPEER %s:%d", a.host, 55001)
 
 				address := net.UDPAddr{IP: remoteAddr.IP, Port: 55001}
-				conn, err := net.Dial("udp", address.String())
+
+				body, err := json.Marshal(FreeSuperpeer{IP: a.host})
 				if err != nil {
-					log.Printf("⚠️ Ошибка соединения с %s: %v", remoteAddr.String(), err)
+					log.Printf("Ошибка маршалинга структуры: %v", err)
 					return
 				}
-				defer conn.Close()
 
-				msg := fmt.Sprintf("FREE_SUPERPEER %s:%d\n", a.host, 55001)
-				_, err = conn.Write([]byte(msg))
-
-				if err != nil {
-					log.Fatalf("Ошибка отправки UDP: %v", err)
-				}
+				sendJSONUDP(address.String(), Message{Type: FreeSuperpeerMessageType, Body: body})
 			} else {
 				log.Printf("❌ Нет места у суперпира, пересылаю FIND_FREE_SUPERPEER другим суперпирам")
 				superpeers := a.getSuperpeers()
 
-				for addr := range superpeers {
-					if addr == remoteAddr.String() {
+				for superpeerIP := range superpeers {
+					if superpeerIP == remoteAddr.String() {
 						continue
 					}
-
-					log.Printf("➡️ Пересылка FIND_FREE_SUPERPEER на %s", addr)
-					conn, err := net.Dial("udp", addr)
-					if err != nil {
-						log.Printf("⚠️ Ошибка при пересылке FIND_FREE_SUPERPEER на %s: %v", addr, err)
-						continue
-					}
-					defer conn.Close()
-
-					_, err = conn.Write([]byte("FIND_FREE_SUPERPEER\n"))
-
-					if err != nil {
-						log.Printf("Ошибка отправки UDP: %v", err)
-					}
+					
+					address := net.UDPAddr{IP: net.ParseIP(superpeerIP), Port: 55001}
+					log.Printf("➡️ Пересылка FIND_FREE_SUPERPEER на %s", address.String())
+					sendJSONUDP(address.String(), Message{Type: FindFreeSuperpeerMessageType})
 				}
 			}
 		}
 
-		case strings.HasPrefix(message, "FREE_SUPERPEER_FOR_BOOTSTRAP"): {
-
+		case FreeSuperpeerForBootstrapMessageType: {
 			log.Println("🪜 Обработка FREE_SUPERPEER_FOR_BOOTSTRAP")
 
-			addr := strings.TrimSpace(strings.TrimPrefix(message, "FREE_SUPERPEER_FOR_BOOTSTRAP"))
-			log.Printf("📥 Получен адрес для bootstrap: %s", addr)
-
-			address, err := GetAddress(addr)
-			if err != nil {
-				log.Printf("⚠️ Не удалось разобрать адрес: %v", err)
+			var body FreeSuperpeerForBootstrap
+			if err := json.Unmarshal(msg.Body, &body); err != nil {
+				log.Printf("⚠️ Ошибка разбора тела: %v %s", err, msg.Body)
 				return
 			}
+			log.Printf("📥 Получен адрес для bootstrap: %s", body.IP)
 
-			log.Printf("🚀 Запуск bootstrap с %s:%d", address.IP, address.Port)
-			a.bootstrap(address)
+			log.Printf("🚀 Запуск bootstrap с %s", body.IP)
+
+			a.bootstrap(BootstrapAddress{
+				IP: body.IP,
+			})
 		}
 
-		case strings.HasPrefix(message, "FREE_SUPERPEER"): {
-
+		case FreeSuperpeerMessageType: {
 			log.Println("📡 Обработка FREE_SUPERPEER")
 
 			addr := strings.TrimSpace(strings.TrimPrefix(message, "FREE_SUPERPEER"))
@@ -325,47 +304,50 @@ func (a *Agent) handleUDPMessage(message string, remoteAddr *net.UDPAddr) {
 			for _, waitingPeerAddress := range a.waitingPeers {
 				log.Printf("📨 Рассылка FREE_SUPERPEER_FOR_BOOTSTRAP %s -> %s", addr, waitingPeerAddress)
 
-				conn, err := net.Dial("udp", waitingPeerAddress)
-				if err != nil {
-					log.Printf("⚠️ Ошибка отправки на %s: %v", waitingPeerAddress, err)
-					continue
-				}
-				defer conn.Close()
+				address := net.UDPAddr{IP: remoteAddr.IP, Port: 55001}
 
-				msg := fmt.Sprintf("FREE_SUPERPEER_FOR_BOOTSTRAP %s\n", addr)
-				_, err = conn.Write([]byte(msg))
-
+				body, err := json.Marshal(FreeSuperpeerForBootstrap{IP: a.host})
 				if err != nil {
-					log.Printf("Ошибка отправки UDP: %v", err)
+					log.Printf("Ошибка маршалинга структуры: %v", err)
+					return
 				}
+
+				sendJSONUDP(address.String(), Message{Type: FreeSuperpeerMessageType, Body: body})
+			}
+
+			var body FreeSuperpeer
+			if err := json.Unmarshal(msg.Body, &body); err != nil {
+				log.Printf("⚠️ Ошибка разбора тела: %v", err)
+				return
 			}
 
 			for superpeerAddress := range a.getSuperpeers() {
 				log.Printf("🔁 Пересылка FREE_SUPERPEER -> %s", superpeerAddress)
 
-				conn, err := net.Dial("udp", superpeerAddress)
+				nextBody, err := json.Marshal(body)
 				if err != nil {
-					log.Printf("⚠️ Ошибка отправки на %s: %v", superpeerAddress, err)
-					continue
+					log.Printf("Ошибка маршалинга структуры: %v", err)
+					return
 				}
-				defer conn.Close()
 
-				_, err = conn.Write([]byte(message))
-
-				if err != nil {
-					log.Printf("Ошибка отправки UDP: %v", err)
-				}
+				sendJSONUDP(superpeerAddress, Message{Type: FreeSuperpeerMessageType, Body: nextBody})
 			}
 		}
 
-		case strings.HasPrefix(message, "ELECT_NEW_SUPERPEER"): {
-			
+		case ElectNewSuperpeerMessageType: {
+			peerCount := len(a.getPeers())
+			log.Println(a.peers, peerCount)
+
+			for peerIP := range a.getPeers() {
+				address := net.UDPAddr{IP: net.ParseIP(peerIP), Port: 55001}
+
+				sendJSONUDP(address.String(), Message{Type: CandidateSuperpeerMessageType})
+			}
 		}
 	}
 }
 
-
-func (a *Agent) bootstrap(bootstrap Address) {
+func (a *Agent) bootstrap(bootstrap BootstrapAddress) {
 	log.Printf("Узел начал bootstraping-процесс")
 
 	maxRetries := 5
@@ -381,7 +363,7 @@ func (a *Agent) bootstrap(bootstrap Address) {
 			continue
 		}
 
-		fmt.Fprintf(conn, "CONNECT_REQUEST\n")
+		sendJSONTCP(conn, Message{Type: ConnectRequestMessageType})
 		log.Printf("Отправлен запрос на bootstrap на адрес %s", addr)
 
 		response, err := bufio.NewReader(conn).ReadString('\n')
@@ -392,18 +374,24 @@ func (a *Agent) bootstrap(bootstrap Address) {
 			continue
 		}
 
-		response = strings.TrimSpace(response)
 		log.Printf("Ответ суперпира: %s", response)
 		conn.Close()
 
-		if strings.HasPrefix(response, "CONNECTED") {
+		var message Message
+		if err := json.Unmarshal([]byte(response), &message); err != nil {
+			log.Printf("⚠️ Ошибка разбора сообщения: %v", err)
+			return
+		}
+
+		if message.Type == ConnectedMessageType {
 			a.peers[bootstrap.IP] = PeerInfo{
 				IP: bootstrap.IP,
 				IsSuper: true,
 			}
 
+			a.discoverPeers(bootstrap.IP)
 			return
-		} else if strings.HasPrefix(response, "WAIT") {
+		} else if message.Type == WaitMessageType {
 			log.Printf("⏳ Ожидание выбора нового суперпира...")
 			return
 		}
@@ -412,27 +400,52 @@ func (a *Agent) bootstrap(bootstrap Address) {
 	log.Printf("❌ Не удалось зарегистрироваться после %d попыток", maxRetries)
 }
 
+func (a *Agent) reportPeers() {
+	peers := make(ReportPeersRequest, 0)
 
-func (a *Agent) discoverPeers(peerAddr string) {
-	conn, err := net.Dial("tcp", peerAddr)
+	for _, peerInfo := range a.peers {
+		peers = append(peers, peerInfo)
+	}
+
+	body, err := json.Marshal(peers);
 	if err != nil {
-		log.Printf("⚠ Ошибка при подключении к %s: %v", peerAddr, err)
+		log.Printf("⚠️ Ошибка разбора тела: %v", err)
+		return
+	}
+
+	for peerIP := range a.peers {
+		address := fmt.Sprintf("%s:%d", peerIP, 55000)
+		sendJSONUDP(address, Message{Type: ReportPeersMessageType, Body: body })
+	}
+}
+
+func (a *Agent) discoverPeers(ip string) {
+	address := fmt.Sprintf("%s:%d", ip, 55000)
+
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		log.Printf("⚠ Ошибка при подключении к %s: %v", address, err)
 		return
 	}
 	defer conn.Close()
 
-	fmt.Fprintf(conn, "DISCOVER_PEERS\n")
+	sendJSONTCP(conn, Message{Type: DiscoverPeersMessageType})
+
 	response, _ := bufio.NewReader(conn).ReadString('\n')
-	peers := strings.Split(strings.TrimSpace(response), "\n")
+
+	var peers DiscoverPeersResponse
+	if err := json.Unmarshal([]byte(response), &peers); err != nil {
+		log.Printf("⚠️ Ошибка разбора тела здесь: %v %s", err, response)
+		return
+	}
+
 	a.peersMutex.Lock()
-	for _, peerAddress := range peers {
-		if peerAddress != "" {
-			a.peers[peerAddress] = PeerInfo{
-				IP: peerAddress,
-				IsSuper: false,
-			}
+
+	for _, peerInfo := range peers {
+		if peerInfo.IP != a.host {
+			a.peers[peerInfo.IP] = peerInfo
 		}
 	}
 	a.peersMutex.Unlock()
-	log.Printf("✅ Получены узлы от %s: %v", peerAddr, peers)
+	log.Printf("✅ Получены узлы от %s: %v", ip, peers)
 }
