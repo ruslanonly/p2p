@@ -46,6 +46,18 @@ func NewLibP2PNode(ctx context.Context, port int) (*LibP2PNode, error) {
 	return n, nil
 }
 
+func (n *LibP2PNode) PeerAddrs(ID peer.ID) []string {
+	multiaddrs := n.Host.Peerstore().PeerInfo(ID).Addrs
+
+	addrs := make([]string, 0)
+
+	for _, ma := range multiaddrs {
+		addrs = append(addrs, ma.String())
+	}
+
+	return addrs
+}
+
 func (n *LibP2PNode) SetStreamHandler(protocolID protocol.ID, handler network.StreamHandler) {
 	n.Host.SetStreamHandler(protocolID, handler)
 }
@@ -59,8 +71,8 @@ func (n *LibP2PNode) ConnectToPeer(peerInfo peer.AddrInfo) error {
 	return n.Host.Connect(n.ctx, peerInfo)
 }
 
-func (n *LibP2PNode) BroadcastToPeers(protocolID protocol.ID, msg []byte) {
-	for _, peerID := range n.Host.Peerstore().Peers() {
+func (n *LibP2PNode) BroadcastToPeers(protocolID protocol.ID, peers []peer.ID, msg []byte) {
+	for _, peerID := range peers {
 		if peerID == n.Host.ID() {
 			continue
 		}

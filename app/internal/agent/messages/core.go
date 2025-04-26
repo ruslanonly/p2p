@@ -1,6 +1,10 @@
 package messages
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/libp2p/go-libp2p/core/peer"
+)
 
 type MessageType string
 
@@ -8,16 +12,11 @@ const (
 	ConnectRequestMessageType   MessageType = "ConnectRequestMessageType"
 	ConnectedMessageType   MessageType = "ConnectedMessageType"
 	NotConnectedMessageType   MessageType = "NotConnectedMessageType"
-	InfoAboutMeMessageType MessageType = "InfoAboutMeMessageType"
-
-	DiscoverPeersMessageType    MessageType = "DISCOVER_PEERS"
-	FindSuperpeerMessageType    MessageType = "FIND_SUPERPEER"
-	FindFreeSuperpeerMessageType        MessageType = "FIND_FREE_SUPERPEER"
-	FreeSuperpeerMessageType            MessageType = "FREE_SUPERPEER"
-	FreeSuperpeerForBootstrapMessageType MessageType = "FREE_SUPERPEER_FOR_BOOTSTRAP"
-	ElectNewSuperpeerMessageType        MessageType = "ELECT_NEW_SUPERPEER"
-	CandidateSuperpeerMessageType       MessageType = "CANDIDATE_SUPERPEER"
-	ReportPeersMessageType       		MessageType = "REPORT_PEERS"
+	NotConnectedAndWaitMessageType   MessageType = "NotConnectedAndWaitMessageType"
+	InitializeElectionRequestMessageType   MessageType = "InitializeElectionRequestMessageType"
+	BecomeOnlyOneHubMessageType MessageType = "BecomeOnlyOneHubMessageType"
+	InfoAboutMeForHubsMessageType MessageType = "InfoAboutMeForHubsMessageType"
+	InfoAboutMeForAbonentsMessageType MessageType = "InfoAboutMeForAbonentsMessageType"
 )
 
 type Message struct {
@@ -26,22 +25,32 @@ type Message struct {
 }
 
 type ConnectRequestMessageBody struct {
-	IP string `json:"ip"`
+	ID string `json:"ip"`
 }
 
-type PeerInfo struct {
-	IP       string      `json:"ip"`
-	IsSuper  bool        `json:"is_super"`
-	Peers    []PeerInfo  `json:"peers,omitempty"`
+type HubSlotsStatus string
+const (
+	// Есть свободные слоты для подключения
+	FreeHubSlotsStatus HubSlotsStatus = "FreeHubSlotsStatus"
+	// Занят, но есть абоненты для инициализации выборов
+	FullHavingAbonentsHubSlotsStatus HubSlotsStatus = "FullHavingAbonentsHubSlotsStatus"
+	// Полностью занят
+	FullNotHavingAbonentsHubSlotsStatus HubSlotsStatus = "FullNotHavingAbonentsHubSlotsStatus"
+)
+
+type InfoAboutMeForHubsMessageBody struct {
+	ID string `json:"id"`
+	Addrs string `json:"addrs"`
+	Status HubSlotsStatus `json:"status"`
 }
 
-type DiscoverPeersResponse = []PeerInfo
-type ReportPeersRequest = []PeerInfo
-
-type FreeSuperpeerForBootstrap struct {
-	IP string `json:"ip"`
+type InfoAboutMeForAbonentsPeerInfo struct {
+	ID       peer.ID      `json:"id"`
+	Addrs       []string      `json:"addrs"`
+	IsHub  bool        `json:"is_hub"`
 }
 
-type FreeSuperpeer struct {
-	IP string `json:"ip"`
+type InfoAboutMeForAbonentsMessageBody struct {
+	Status HubSlotsStatus `json:"status"`
+	Peers []InfoAboutMeForAbonentsPeerInfo `json:"peers"`
 }

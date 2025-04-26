@@ -23,8 +23,8 @@ const (
 	ElectingNewHubAgentFSMState   string = "ElectingNewHub"
 	// S7 Состояние ретрансляции полученных сообщений всей сети (хабам)
 	NetworkBroadcastingAgentFSMState   string = "NetworkBroadcasting"
-	// S8 Состояние подключения нового абонента
-	ConnectingNewAbonentAgentFSMState   string = "ConnectingNewAbonent"
+	// S8 Состояние проведение выборов среди сегмента абонентов
+	OrganizingSegmentHubElectionAgentFSMState   string = "OrganizingSegmentHubElection"
 	// S10 Состояние достижения соглашения о блокировке подозрительного хоста
 	BlockingSuspiciosHostAgentFSMState   string = "BlockingSuspiciosHost"
 	// S11 Состояние ретрансляции сообщения абонентам из собственного сегмента
@@ -65,9 +65,9 @@ const (
 	// E14 Ретрансляция сообщения от абонента закончилась
 	MessageFromSegmentAbonentIsPublishedFSMEvent   string = "MessageFromSegmentAbonentIsPublished"
 	// E15 Получение запрос на подключение от абонента
-	ConnectionRequestToHubAgentFSMEvent   string = "ConnectionRequestToHub"
+	OrganizeSegmentHubElectionAgentFSMEvent   string = "OrganizeSegmentHubElection"
 	// E16 Получилось/не получилось подключить нового абонента/хаба
-	ConnectionRequestToHubIsHandledAgentFSMEvent   string = "ConnectionRequestToHubIsHandled"
+	OrganizingSegmentHubElectionIsCompletedAgentFSMEvent   string = "OrganizingSegmentHubElectionIsCompleted"
 	// E17 Сообщение о подозрительном хосте от абонента сегмента
 	SuspiciosHostInfoFromSegmentAbonentAgentFSMEvent   string = "SuspiciosHostInfoFromSegmentAbonent"
 	// E18 Подозрительный хост не заблокирован хабом
@@ -80,7 +80,7 @@ const (
 
 var NodeFSMEvents fsm.Events = fsm.Events{
 	{Name: ReadInitialSettingsAgentFSMEvent, Src: []string{IdleAgentFSMState}, Dst: ConnectingToHubAgentFSMState},
-	{Name: BecomeHubAgentFSMEvent, Src: []string{IdleAgentFSMState}, Dst: ListeningMessagesAsHubAgentFSMState},
+	{Name: BecomeHubAgentFSMEvent, Src: []string{IdleAgentFSMState, ListeningMessagesAsAbonentAgentFSMState}, Dst: ListeningMessagesAsHubAgentFSMState},
 	{Name: ConnectedToHubAgentFSMEvent, Src: []string{ConnectingToHubAgentFSMState}, Dst: ListeningMessagesAsAbonentAgentFSMState},
 	{Name: NotConnectedToHubAgentFSMEvent, Src: []string{ConnectingToHubAgentFSMState, ListeningMessagesAsAbonentAgentFSMState}, Dst: PendingNewHubAgentFSMState},
 	{Name: RequestConnectionFromAbonentToHubAgentFSMEvent, Src: []string{PendingNewHubAgentFSMState}, Dst: ConnectingToHubAgentFSMState},
@@ -96,8 +96,8 @@ var NodeFSMEvents fsm.Events = fsm.Events{
 	{Name: HubDoNotHaveHeartbeatFSMEvent, Src: []string{PendingNewHubAgentFSMState}, Dst: ElectingNewHubAgentFSMState},
 	{Name: MessageFromSegmentAbonentFSMEvent, Src: []string{ListeningMessagesAsHubAgentFSMState}, Dst: NetworkBroadcastingAgentFSMState},
 	{Name: MessageFromSegmentAbonentIsPublishedFSMEvent, Src: []string{NetworkBroadcastingAgentFSMState}, Dst: ListeningMessagesAsHubAgentFSMState},
-	{Name: ConnectionRequestToHubAgentFSMEvent, Src: []string{ListeningMessagesAsHubAgentFSMState}, Dst: ConnectingNewAbonentAgentFSMState},
-	{Name: ConnectionRequestToHubIsHandledAgentFSMEvent, Src: []string{ConnectingNewAbonentAgentFSMState}, Dst: ListeningMessagesAsHubAgentFSMState},
+	{Name: OrganizeSegmentHubElectionAgentFSMEvent, Src: []string{ListeningMessagesAsHubAgentFSMState}, Dst: OrganizingSegmentHubElectionAgentFSMState},
+	{Name: OrganizingSegmentHubElectionIsCompletedAgentFSMEvent, Src: []string{OrganizingSegmentHubElectionAgentFSMState}, Dst: ListeningMessagesAsHubAgentFSMState},
 	{Name: SuspiciosHostInfoFromSegmentAbonentAgentFSMEvent, Src: []string{ListeningMessagesAsHubAgentFSMState}, Dst: BlockingSuspiciosHostAgentFSMState},
 	{Name: HubDidNotBlockedSuspiciosHostAgentFSMEvent, Src: []string{BlockingSuspiciosHostAgentFSMState}, Dst: ListeningMessagesAsHubAgentFSMState},
 	{Name: HubBlockedSuspiciosHostAgentFSMEvent, Src: []string{BlockingSuspiciosHostAgentFSMState}, Dst: AbonentsSegmentBroadcastAgentFSMState},
