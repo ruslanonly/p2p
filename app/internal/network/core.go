@@ -9,7 +9,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 )
@@ -66,8 +65,7 @@ func (n *LibP2PNode) RemoveStreamHandler(protocolID protocol.ID) {
 	n.Host.RemoveStreamHandler(protocolID)
 }
 
-func (n *LibP2PNode) ConnectToPeer(peerInfo peer.AddrInfo) error {
-	n.Host.Peerstore().AddAddrs(peerInfo.ID, peerInfo.Addrs, peerstore.PermanentAddrTTL)
+func (n *LibP2PNode) Connect(peerInfo peer.AddrInfo) error {
 	return n.Host.Connect(n.ctx, peerInfo)
 }
 
@@ -83,7 +81,7 @@ func (n *LibP2PNode) BroadcastToPeers(protocolID protocol.ID, peers []peer.ID, m
 			continue
 		}
 
-		_, err = stream.Write(msg)
+		_, err = stream.Write(append(msg, '\n'))
 		if err != nil {
 			fmt.Println("Ошибка отправление сообщения:", err)
 		}

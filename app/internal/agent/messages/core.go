@@ -16,7 +16,7 @@ const (
 	InitializeElectionRequestMessageType   MessageType = "InitializeElectionRequestMessageType"
 	BecomeOnlyOneHubMessageType MessageType = "BecomeOnlyOneHubMessageType"
 	InfoAboutMeForHubsMessageType MessageType = "InfoAboutMeForHubsMessageType"
-	InfoAboutMeForAbonentsMessageType MessageType = "InfoAboutMeForAbonentsMessageType"
+	InfoAboutSegmentMessageType MessageType = "InfoAboutSegmentMessageType"
 )
 
 type Message struct {
@@ -44,13 +44,12 @@ type InfoAboutMeForHubsMessageBody struct {
 	Status HubSlotsStatus `json:"status"`
 }
 
-type InfoAboutMeForAbonentsPeerInfo struct {
+type InfoAboutSegmentPeerInfo struct {
 	ID       peer.ID      `json:"id"`
 	Addrs       []string      `json:"addrs"`
 	IsHub  bool        `json:"is_hub"`
 }
 
-type InfoAboutMeForAbonentsMessageBody struct {
-	Status HubSlotsStatus `json:"status"`
-	Peers []InfoAboutMeForAbonentsPeerInfo `json:"peers"`
+type InfoAboutSegmentMessageBody struct {
+	Peers []InfoAboutSegmentPeerInfo `json:"peers"`
 }
