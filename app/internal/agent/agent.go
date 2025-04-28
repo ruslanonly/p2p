@@ -74,7 +74,6 @@ func (a *Agent) getSplittedPeers() (map[peer.ID]AgentPeerInfo, map[peer.ID]Agent
 	hubs := make(map[peer.ID]AgentPeerInfo)
 	abonents := make(map[peer.ID]AgentPeerInfo)
 
-	a.peersMutex.RLock()
 	for peerID, peerInfo := range a.peers {
 		if peerInfo.IsHub {
 			hubs[peerID] = peerInfo
@@ -82,22 +81,17 @@ func (a *Agent) getSplittedPeers() (map[peer.ID]AgentPeerInfo, map[peer.ID]Agent
 			abonents[peerID] = peerInfo
 		}
 	}
-	a.peersMutex.RUnlock()
 
 	return hubs, abonents
 }
 
 func (a *Agent) isPeersLimitExceeded() bool {
-	a.peersMutex.RLock()
 	out := len(a.peers) >= a.peersLimit
-	a.peersMutex.RUnlock()
 
 	return out
 }
 
 func (a *Agent) getHubSlotsStatus() messages.HubSlotsStatus {
-	a.peersMutex.RLock()
-	defer a.peersMutex.RUnlock()
 	abonents, _ := a.getSplittedPeers()
 
 	hasAbonents := len(abonents) == 0
@@ -342,18 +336,19 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 	remotePeerID := stream.Conn().RemotePeer()
 
+	a.peersMutex.Lock()
+	defer a.peersMutex.Unlock()
 	slotsStatus := a.getHubSlotsStatus()
+
 	var msg messages.Message
 	if slotsStatus == messages.FreeHubSlotsStatus {
-		a.peersMutex.Lock()
 		a.peers[remotePeerID] = AgentPeerInfo{
 			ID:    remotePeerID,
 			IsHub: false,
 			Peers: nil,
 		}
-		count := len(a.peers)
-		a.peersMutex.Unlock()
-		log.Print("Подключен", remotePeerID, slotsStatus, count, a.peersLimit)
+
+		log.Printf("Подключен новый узел %s\n", remotePeerID)
 
 		msg = messages.Message{
 			Type: messages.ConnectedMessageType,
