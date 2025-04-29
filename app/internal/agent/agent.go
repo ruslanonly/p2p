@@ -85,6 +85,33 @@ func (a *Agent) getSplittedPeers() (map[peer.ID]AgentPeerInfo, map[peer.ID]Agent
 	return hubs, abonents
 }
 
+// [ABONENT]
+func (a *Agent) getMyHub() (*AgentPeerInfo, bool) {
+	for _, peerInfo := range a.peers {
+		if peerInfo.IsHub {
+			return &peerInfo, true
+		}
+	}
+
+	return nil, false
+}
+
+// [ABONENT]
+func (a *Agent) getSegmentPeers() map[peer.ID]AgentPeerInfoPeer {
+	myHub, myHubIsFound := a.getMyHub()
+	segmentPeers := make(map[peer.ID]AgentPeerInfoPeer)
+
+	if myHubIsFound {
+		for peerID, peerInfo := range a.peers[myHub.ID].Peers {
+			if !peerInfo.IsHub {
+				segmentPeers[peerID] = peerInfo
+			}
+		}
+	}
+
+	return segmentPeers
+}
+
 func (a *Agent) isPeersLimitExceeded() bool {
 	out := len(a.peers) >= a.peersLimit
 
@@ -164,7 +191,17 @@ func (a *Agent) Start(options *StartOptions) {
 				a.organizeSegmentHubElection()
 			},
 			fsm.EnterStateFSMCallbackName(fsm.ElectingNewHubAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
+				log.Println("🚩 Я должен начать выборы")
 
+				initialize, ok := e.Args[0].(bool)
+
+				if !ok {
+					log.Println("Первый аргумент initialize должен иметь тип данных bool")
+				}
+
+				if initialize {
+					a.initializeElectionForMySegment()
+				}
 			},
 		},
 	)
@@ -219,14 +256,14 @@ func (a *Agent) bootstrap(ip, peerID string) {
 	log.Printf("Попытка подключиться к bootstrap-узлу: %s", maddr.String())
 
 	for {
-		info, err := peer.AddrInfoFromP2pAddr(maddr)
+		hubAddrInfo, err := peer.AddrInfoFromP2pAddr(maddr)
 		if err != nil {
 			log.Printf("Ошибка парсинга peer.AddrInfo: %v", err)
 			time.Sleep(period)
 			continue
 		}
 
-		if err := a.node.Connect(*info); err != nil {
+		if err := a.node.Connect(*hubAddrInfo); err != nil {
 			log.Printf("Подключение к bootstrap не удалось: %v. Повтор через %s...", err, period)
 			if strings.Contains(err.Error(), "peer id mismatch") {
 				re := regexp.MustCompile(`remote key matches ([\w\d]+)`)
@@ -240,7 +277,7 @@ func (a *Agent) bootstrap(ip, peerID string) {
 			}
 			time.Sleep(period)
 		} else {
-			s, err := a.node.Host.NewStream(context.Background(), info.ID, ProtocolID)
+			s, err := a.node.Host.NewStream(context.Background(), hubAddrInfo.ID, ProtocolID)
 			if err != nil {
 				log.Println(err)
 				return
@@ -264,22 +301,31 @@ func (a *Agent) bootstrap(ip, peerID string) {
 
 			var message messages.Message
 			if err := json.Unmarshal([]byte(responseRaw), &message); err != nil {
-				log.Println("Ошибка при парсинге ответа:", err)
+				log.Println("Ошибка при парсинге сообщения:", err)
 				return
 			}
 
 			if message.Type == messages.ConnectedMessageType {
-				log.Print("Я подключен к хабу")
-				a.peersMutex.Lock()
-				a.peers[info.ID] = AgentPeerInfo{
-					ID:    info.ID,
+				log.Printf("Я подключен к хабу")
+				a.fsm.Event(fsm.ConnectedToHubAgentFSMEvent)
+
+				var body messages.ConnectedMessageBody
+				if err := json.Unmarshal(message.Body, &body); err != nil {
+					log.Println("Ошибка при парсинге ответа:", err)
+					return
+				}
+
+				a.peers[hubAddrInfo.ID] = AgentPeerInfo{
+					ID:    hubAddrInfo.ID,
 					IsHub: true,
 					Peers: make(map[peer.ID]AgentPeerInfoPeer, 0),
 				}
-				a.peersMutex.Unlock()
-				a.fsm.Event(fsm.ConnectedToHubAgentFSMEvent)
+
+				a.handleInfoAboutSegment(hubAddrInfo.ID, body.Peers)
+			} else if message.Type == messages.NotConnectedAndWaitMessageType {
+				log.Print("Я не подключен, но ожидаю сообщения о новом хабе")
 			} else if message.Type == messages.NotConnectedMessageType {
-				log.Print("Узел не подключен")
+				log.Print("Я не подключен")
 				a.fsm.Event(fsm.NotConnectedToHubAgentFSMEvent, ip, peerID)
 			}
 
@@ -323,54 +369,111 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 	} else if msg.Type == messages.BecomeOnlyOneHubMessageType {
 		a.fsm.Event(fsm.BecomeHubAgentFSMEvent)
 	} else if msg.Type == messages.InitializeElectionRequestMessageType {
-		err := a.fsm.Event(fsm.ElectNewHubRequestFSMEvent)
+		var body messages.InitializeElectionRequestMessageBody
+		if err := json.Unmarshal([]byte(msg.Body), &body); err != nil {
+			log.Printf("Ошибка при парсинге сообщения: %v", err)
+			return
+		}
+
+		a.handleInfoAboutSegment(stream.Conn().RemotePeer(), body.Peers)
+		log.Println("HELLO", a.peers)
+		// Абонент должен перейти в состояние выборов, инициализировав их
+		err := a.fsm.Event(fsm.ElectNewHubRequestFSMEvent, true)
 		if err != nil {
 			log.Printf("Ошибка при FSM переходе: %v", err)
 		}
 	} else if msg.Type == messages.InfoAboutSegmentMessageType {
-		a.handleInfoAboutSegment(stream.Conn().RemotePeer(), msg)
+		var infoAboutSegment messages.InfoAboutSegmentMessageBody
+		if err := json.Unmarshal([]byte(msg.Body), &infoAboutSegment); err != nil {
+			log.Println("Ошибка при парсинге ответа:", err)
+			return
+		}
+
+		a.peersMutex.Lock()
+		defer a.peersMutex.Unlock()
+		a.handleInfoAboutSegment(stream.Conn().RemotePeer(), infoAboutSegment.Peers)
 	}
 }
 
 // [HUB] Обработка запроса на подключение
 func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
-	remotePeerID := stream.Conn().RemotePeer()
-
 	a.peersMutex.Lock()
 	defer a.peersMutex.Unlock()
 	slotsStatus := a.getHubSlotsStatus()
 
-	var msg messages.Message
 	if slotsStatus == messages.FreeHubSlotsStatus {
-		a.peers[remotePeerID] = AgentPeerInfo{
-			ID:    remotePeerID,
-			IsHub: false,
-			Peers: nil,
-		}
-
-		log.Printf("Подключен новый узел %s\n", remotePeerID)
-
-		msg = messages.Message{
-			Type: messages.ConnectedMessageType,
-		}
-	} else if slotsStatus == messages.FullHavingAbonentsHubSlotsStatus {
-		msg = messages.Message{
-			Type: messages.NotConnectedAndWaitMessageType,
-		}
-
-		a.fsm.Event(fsm.OrganizeSegmentHubElectionAgentFSMEvent)
+		a.handleConnectedOnConnectionRequest(stream)
 	} else {
-		msg = messages.Message{
-			Type: messages.NotConnectedMessageType,
+		var msg messages.Message
+
+		if slotsStatus == messages.FullHavingAbonentsHubSlotsStatus {
+			msg = messages.Message{
+				Type: messages.NotConnectedAndWaitMessageType,
+			}
+
+			if a.fsm.FSM.Can(fsm.OrganizeSegmentHubElectionAgentFSMEvent) {
+				a.fsm.Event(fsm.OrganizeSegmentHubElectionAgentFSMEvent)
+			}
+		} else {
+			msg = messages.Message{
+				Type: messages.NotConnectedMessageType,
+			}
+
+			// TODO: Поиск хабов среди известных
+		}
+
+		if err := json.NewEncoder(stream).Encode(msg); err != nil {
+			log.Printf("Ошибка при отправке сообщения об неуспешном подключении узлу %s: %v\n", stream.Conn().RemotePeer(), err)
+			return
+		}
+
+		stream.Close()
+	}
+}
+
+// [HUB]
+func (a *Agent) handleConnectedOnConnectionRequest(stream libp2pNetwork.Stream) {
+	remotePeerID := stream.Conn().RemotePeer()
+
+	_, abonents := a.getSplittedPeers()
+	abonentsPeerInfos := make([]messages.InfoAboutSegmentPeerInfo, 0)
+
+	for peerID, peerInfo := range abonents {
+		addrs := a.node.PeerAddrs(peerID)
+
+		abonentsPeerInfos = append(abonentsPeerInfos, messages.InfoAboutSegmentPeerInfo{
+			ID:    peerID,
+			IsHub: peerInfo.IsHub,
+			Addrs: addrs,
+		})
+	}
+
+	body := messages.ConnectedMessageBody{
+		Peers: abonentsPeerInfos,
+	}
+
+	if marshaledBody, err := json.Marshal(body); err != nil {
+		log.Println("Ошибка при маршалинге тела информации о себе:", err)
+		return
+	} else {
+		infoAboutSegmentMessage := messages.Message{
+			Type: messages.ConnectedMessageType,
+			Body: marshaledBody,
+		}
+
+		if err := json.NewEncoder(stream).Encode(infoAboutSegmentMessage); err != nil {
+			log.Printf("Ошибка при отправке сообщения об успешном подключении узла %s: %v\n", remotePeerID, err)
+			return
 		}
 	}
 
-	if err := json.NewEncoder(stream).Encode(msg); err != nil {
-		log.Printf("Ошибка при отправке сообщения об неуспешном подключении узлу %s: %v\n", stream.Conn().RemotePeer(), err)
-		return
-	}
+	log.Printf("Подключен новый узел %s\n", remotePeerID)
 
-	stream.Close()
+	a.peers[remotePeerID] = AgentPeerInfo{
+		ID:    remotePeerID,
+		IsHub: false,
+		Peers: nil,
+	}
 }
 
 // [HUB] Отправление информации о себе хабам
@@ -452,29 +555,20 @@ func (a *Agent) broadcastToSegmentInfoAboutSegment() {
 			log.Println("Ошибка при маршалинге информации о себе:", err)
 			return
 		} else {
-			log.Printf("Отправка broadcast-сообщение о сегменте", abonentsPeerIDs)
+			log.Printf("Отправка broadcast-сообщение о сегменте %v", abonentsPeerIDs)
 			a.node.BroadcastToPeers(ProtocolID, abonentsPeerIDs, marshaledMessage)
 		}
 	}
 }
 
 // [ABONENT]
-func (a *Agent) handleInfoAboutSegment(hubID peer.ID, message messages.Message) {
-	var infoAboutSegment messages.InfoAboutSegmentMessageBody
-	if err := json.Unmarshal([]byte(message.Body), &infoAboutSegment); err != nil {
-		log.Println("Ошибка при парсинге ответа:", err)
-		return
-	}
-
-	for _, p := range infoAboutSegment.Peers {
+func (a *Agent) handleInfoAboutSegment(hubID peer.ID, peers []messages.InfoAboutSegmentPeerInfo) {
+	for _, p := range peers {
 		connectedness := a.node.Host.Network().Connectedness(p.ID)
 
-		a.peersMutex.RLock()
 		if _, found := a.peers[hubID].Peers[p.ID]; found || connectedness == libp2pNetwork.Connected || p.ID == a.node.Host.ID() || p.ID == hubID {
-			a.peersMutex.RUnlock()
 			continue
 		}
-		a.peersMutex.RUnlock()
 
 		mas, err := network.MultiaddrsStrsToMultiaddrs(p.Addrs)
 
@@ -491,17 +585,15 @@ func (a *Agent) handleInfoAboutSegment(hubID peer.ID, message messages.Message) 
 		if err := a.node.Connect(info); err != nil {
 			log.Printf("Возникла ошибка при подключении пира %s: %v", p.ID, err)
 		} else {
-			a.peersMutex.Lock()
 			a.peers[hubID].Peers[p.ID] = AgentPeerInfoPeer{
 				ID:    p.ID,
 				Addrs: p.Addrs,
 				IsHub: p.IsHub,
 			}
-			a.peersMutex.Unlock()
 		}
 	}
 
-	log.Printf("Пиры хаба после получения информации о сегменте: %v", a.peers[hubID].Peers)
+	// log.Printf("Пиры хаба после получения информации о сегменте: %v", a.peers[hubID].Peers)
 }
 
 // [HUB]
@@ -549,6 +641,10 @@ func (a *Agent) organizeSegmentHubElection() {
 
 // [ABONENT]
 func (a *Agent) initializeElectionForMySegment() {
+	segmentPeers := a.getSegmentPeers()
+
+	log.Printf("Пиры сегмента %v %d \n", segmentPeers, len(segmentPeers))
+
 	peerID := a.node.Host.ID()
 
 	config := raft.DefaultConfig()

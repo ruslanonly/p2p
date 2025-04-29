@@ -69,6 +69,24 @@ func (n *LibP2PNode) Connect(peerInfo peer.AddrInfo) error {
 	return n.Host.Connect(n.ctx, peerInfo)
 }
 
+// One way
+func (n *LibP2PNode) Stream(protocolID protocol.ID, peerID peer.ID, msg []byte) error {
+	stream, err := n.Host.NewStream(n.ctx, peerID, protocolID)
+	if err != nil {
+		fmt.Printf("Ошибка открытия протокола %s: %v", protocolID, err)
+		return err
+	}
+
+	_, err = stream.Write(msg)
+	if err != nil {
+		fmt.Println("Ошибка отправление сообщения:", err)
+		return err
+	}
+	_ = stream.Close()
+
+	return nil
+}
+
 func (n *LibP2PNode) BroadcastToPeers(protocolID protocol.ID, peers []peer.ID, msg []byte) {
 	for _, peerID := range peers {
 		if peerID == n.Host.ID() {
@@ -91,7 +109,7 @@ func (n *LibP2PNode) BroadcastToPeers(protocolID protocol.ID, peers []peer.ID, m
 
 func (n *LibP2PNode) PrintHostInfo() {
 	out := fmt.Sprintf("Peer ID: %s\n", n.Host.ID().String())
-	
+
 	for _, addr := range n.Host.Addrs() {
 		out += fmt.Sprintf("Listening on: %s/p2p/%s\n", addr, n.Host.ID().String())
 	}

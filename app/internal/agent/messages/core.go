@@ -9,14 +9,14 @@ import (
 type MessageType string
 
 const (
-	ConnectRequestMessageType   MessageType = "ConnectRequestMessageType"
-	ConnectedMessageType   MessageType = "ConnectedMessageType"
-	NotConnectedMessageType   MessageType = "NotConnectedMessageType"
-	NotConnectedAndWaitMessageType   MessageType = "NotConnectedAndWaitMessageType"
-	InitializeElectionRequestMessageType   MessageType = "InitializeElectionRequestMessageType"
-	BecomeOnlyOneHubMessageType MessageType = "BecomeOnlyOneHubMessageType"
-	InfoAboutMeForHubsMessageType MessageType = "InfoAboutMeForHubsMessageType"
-	InfoAboutSegmentMessageType MessageType = "InfoAboutSegmentMessageType"
+	ConnectRequestMessageType            MessageType = "ConnectRequestMessageType"
+	ConnectedMessageType                 MessageType = "ConnectedMessageType"
+	NotConnectedMessageType              MessageType = "NotConnectedMessageType"
+	NotConnectedAndWaitMessageType       MessageType = "NotConnectedAndWaitMessageType"
+	InitializeElectionRequestMessageType MessageType = "InitializeElectionRequestMessageType"
+	BecomeOnlyOneHubMessageType          MessageType = "BecomeOnlyOneHubMessageType"
+	InfoAboutMeForHubsMessageType        MessageType = "InfoAboutMeForHubsMessageType"
+	InfoAboutSegmentMessageType          MessageType = "InfoAboutSegmentMessageType"
 )
 
 type Message struct {
@@ -29,6 +29,7 @@ type ConnectRequestMessageBody struct {
 }
 
 type HubSlotsStatus string
+
 const (
 	// Есть свободные слоты для подключения
 	FreeHubSlotsStatus HubSlotsStatus = "FreeHubSlotsStatus"
@@ -39,15 +40,23 @@ const (
 )
 
 type InfoAboutMeForHubsMessageBody struct {
-	ID string `json:"id"`
-	Addrs string `json:"addrs"`
+	ID     string         `json:"id"`
+	Addrs  string         `json:"addrs"`
 	Status HubSlotsStatus `json:"status"`
 }
 
 type InfoAboutSegmentPeerInfo struct {
-	ID       peer.ID      `json:"id"`
-	Addrs       []string      `json:"addrs"`
-	IsHub  bool        `json:"is_hub"`
+	ID    peer.ID  `json:"id"`
+	Addrs []string `json:"addrs"`
+	IsHub bool     `json:"is_hub"`
+}
+
+type ConnectedMessageBody struct {
+	Peers []InfoAboutSegmentPeerInfo `json:"peers"`
+}
+
+type InitializeElectionRequestMessageBody struct {
+	Peers []InfoAboutSegmentPeerInfo `json:"peers"`
 }
 
 type InfoAboutSegmentMessageBody struct {
