@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/raft"
 	raftnet "github.com/libp2p/go-libp2p-raft"
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
@@ -98,6 +99,9 @@ func (a *Agent) getMyHub() (*AgentPeerInfo, bool) {
 
 // [ABONENT]
 func (a *Agent) getSegmentPeers() map[peer.ID]AgentPeerInfoPeer {
+	a.peersMutex.Lock()
+	defer a.peersMutex.Unlock()
+
 	myHub, myHubIsFound := a.getMyHub()
 	segmentPeers := make(map[peer.ID]AgentPeerInfoPeer)
 
@@ -191,16 +195,25 @@ func (a *Agent) Start(options *StartOptions) {
 				a.organizeSegmentHubElection()
 			},
 			fsm.EnterStateFSMCallbackName(fsm.ElectingNewHubAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
-				log.Println("🚩 Я должен начать выборы")
-
-				initialize, ok := e.Args[0].(bool)
+				segmentPeers, ok := e.Args[0].([]AgentPeerInfoPeer)
 
 				if !ok {
-					log.Println("Первый аргумент initialize должен иметь тип данных bool")
+					log.Println("Первый аргумент peers должен иметь тип данных []AgentPeerInfoPeer")
+					return
 				}
 
+				initialize, ok := e.Args[1].(bool)
+
+				if !ok {
+					log.Println("Второй аргумент initialize должен иметь тип данных bool")
+					return
+				}
+
+				log.Println("ВЫБОРЫ", segmentPeers)
 				if initialize {
-					a.initializeElectionForMySegment()
+					a.initializeElectionForMySegment(segmentPeers)
+				} else {
+					a.prepareForElection(segmentPeers)
 				}
 			},
 		},
@@ -376,9 +389,15 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 		}
 
 		a.handleInfoAboutSegment(stream.Conn().RemotePeer(), body.Peers)
-		log.Println("HELLO", a.peers)
-		// Абонент должен перейти в состояние выборов, инициализировав их
-		err := a.fsm.Event(fsm.ElectNewHubRequestFSMEvent, true)
+
+		segmentPeersMap := a.getSegmentPeers()
+		segmentPeersArr := make([]AgentPeerInfoPeer, 0)
+		for _, p := range segmentPeersMap {
+			segmentPeersArr = append(segmentPeersArr, p)
+		}
+
+		log.Println("🚩 Я должен начать выборы")
+		err := a.fsm.Event(fsm.ElectNewHubRequestFSMEvent, segmentPeersArr, true)
 		if err != nil {
 			log.Printf("Ошибка при FSM переходе: %v", err)
 		}
@@ -389,9 +408,27 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 			return
 		}
 
-		a.peersMutex.Lock()
-		defer a.peersMutex.Unlock()
 		a.handleInfoAboutSegment(stream.Conn().RemotePeer(), infoAboutSegment.Peers)
+	} else if msg.Type == messages.ElectionRequestMessageType {
+		log.Println("🚩 Меня позвали участвовать в выборах нового хаба")
+
+		var infoAboutSegment messages.InfoAboutSegmentMessageBody
+		if err := json.Unmarshal([]byte(msg.Body), &infoAboutSegment); err != nil {
+			log.Println("Ошибка при парсинге ответа:", err)
+			return
+		}
+
+		// TODO: COPY PASTE FROM msg.Type == messages.InfoAboutSegmentMessageType
+		segmentPeersMap := a.getSegmentPeers()
+		segmentPeersArr := make([]AgentPeerInfoPeer, 0)
+		for _, p := range segmentPeersMap {
+			segmentPeersArr = append(segmentPeersArr, p)
+		}
+
+		err := a.fsm.Event(fsm.ElectNewHubRequestFSMEvent, segmentPeersArr, false)
+		if err != nil {
+			log.Printf("Ошибка при FSM переходе: %v", err)
+		}
 	}
 }
 
@@ -563,13 +600,10 @@ func (a *Agent) broadcastToSegmentInfoAboutSegment() {
 
 // [ABONENT]
 func (a *Agent) handleInfoAboutSegment(hubID peer.ID, peers []messages.InfoAboutSegmentPeerInfo) {
+	a.peersMutex.Lock()
+	defer a.peersMutex.Unlock()
+
 	for _, p := range peers {
-		connectedness := a.node.Host.Network().Connectedness(p.ID)
-
-		if _, found := a.peers[hubID].Peers[p.ID]; found || connectedness == libp2pNetwork.Connected || p.ID == a.node.Host.ID() || p.ID == hubID {
-			continue
-		}
-
 		mas, err := network.MultiaddrsStrsToMultiaddrs(p.Addrs)
 
 		if err != nil {
@@ -582,17 +616,26 @@ func (a *Agent) handleInfoAboutSegment(hubID peer.ID, peers []messages.InfoAbout
 			Addrs: mas,
 		}
 
-		if err := a.node.Connect(info); err != nil {
-			log.Printf("Возникла ошибка при подключении пира %s: %v", p.ID, err)
-		} else {
+		connectedness := a.node.Host.Network().Connectedness(p.ID)
+
+		if connectedness == libp2pNetwork.Connected || p.ID == a.node.Host.ID() {
 			a.peers[hubID].Peers[p.ID] = AgentPeerInfoPeer{
 				ID:    p.ID,
 				Addrs: p.Addrs,
 				IsHub: p.IsHub,
 			}
+		} else {
+			if err := a.node.Connect(info); err != nil {
+				log.Printf("Возникла ошибка при подключении пира %s: %v", p.ID, err)
+			} else {
+				a.peers[hubID].Peers[p.ID] = AgentPeerInfoPeer{
+					ID:    p.ID,
+					Addrs: p.Addrs,
+					IsHub: p.IsHub,
+				}
+			}
 		}
 	}
-
 	// log.Printf("Пиры хаба после получения информации о сегменте: %v", a.peers[hubID].Peers)
 }
 
@@ -619,9 +662,34 @@ func (a *Agent) organizeSegmentHubElection() {
 		} else {
 			// Первый абонент из списка абонентов должен являться инициатором выборов среди другого сегмента, о котором он знает
 			log.Printf("Отправка сообщения о необходимости инициализировать выборы среди абонентов сегмента")
-			message = messages.Message{
-				Type: messages.InitializeElectionRequestMessageType,
+
+			_, abonents := a.getSplittedPeers()
+			abonentsPeerInfos := make([]messages.InfoAboutSegmentPeerInfo, 0)
+
+			for peerID, peerInfo := range abonents {
+				addrs := a.node.PeerAddrs(peerID)
+
+				abonentsPeerInfos = append(abonentsPeerInfos, messages.InfoAboutSegmentPeerInfo{
+					ID:    peerID,
+					IsHub: peerInfo.IsHub,
+					Addrs: addrs,
+				})
 			}
+
+			body := messages.InitializeElectionRequestMessageBody{
+				Peers: abonentsPeerInfos,
+			}
+
+			if marshaledBody, err := json.Marshal(body); err != nil {
+				log.Println("Ошибка при маршалинге тела InitializeElectionRequestMessageBody:", err)
+				return
+			} else {
+				message = messages.Message{
+					Type: messages.InitializeElectionRequestMessageType,
+					Body: marshaledBody,
+				}
+			}
+
 		}
 
 		s, err := a.node.Host.NewStream(context.Background(), abonent.ID, ProtocolID)
@@ -640,15 +708,13 @@ func (a *Agent) organizeSegmentHubElection() {
 }
 
 // [ABONENT]
-func (a *Agent) initializeElectionForMySegment() {
-	segmentPeers := a.getSegmentPeers()
-
-	log.Printf("Пиры сегмента %v %d \n", segmentPeers, len(segmentPeers))
-
-	peerID := a.node.Host.ID()
-
+func (a *Agent) prepareForElection(segmentPeers []AgentPeerInfoPeer) {
 	config := raft.DefaultConfig()
-	config.LocalID = raft.ServerID(peerID)
+	config.LocalID = raft.ServerID(a.node.Host.ID().String())
+	config.Logger = hclog.New(&hclog.LoggerOptions{
+		Name:  "raft",
+		Level: hclog.Error,
+	})
 
 	store := raft.NewInmemStore()
 	logStore := raft.NewInmemStore()
@@ -656,27 +722,28 @@ func (a *Agent) initializeElectionForMySegment() {
 
 	transport, err := raftnet.NewLibp2pTransport(a.node.Host, 10*time.Second)
 	if err != nil {
-
+		log.Printf("Возникла ошибка при подготовке transport для выборов нового хаба: %v", err)
+		return
 	}
 
 	raftNode, err := raft.NewRaft(config, &hubelection.HubElectionRaftFSM{}, logStore, store, snapshotStore, transport)
 	if err != nil {
-
+		log.Printf("Возникла ошибка при подготовке raftNode для выборов нового хаба: %v", err)
+		return
 	}
 
 	a.fsm.FSM.SetMetadata("RaftNode", raftNode)
 
+	var servers []raft.Server
+	for _, segmentPeer := range segmentPeers {
+		servers = append(servers, raft.Server{
+			ID:      raft.ServerID(segmentPeer.ID.String()),
+			Address: raft.ServerAddress(segmentPeer.ID.String()),
+		})
+	}
+
 	cfg := raft.Configuration{
-		Servers: []raft.Server{
-			{
-				ID:      raft.ServerID(peerID),
-				Address: raft.ServerAddress(peerID),
-			},
-			{
-				ID:      raft.ServerID(peerID),
-				Address: raft.ServerAddress(peerID),
-			},
-		},
+		Servers: servers,
 	}
 
 	raftNode.BootstrapCluster(cfg)
@@ -701,9 +768,62 @@ func (a *Agent) initializeElectionForMySegment() {
 				fmt.Println("👑 Новый лидер выбран:", leaderObs.LeaderAddr, leaderObs.LeaderID)
 				return
 			}
-		case <-time.After(10 * time.Second):
-			fmt.Println("⚠️ Таймаут ожидания выбора лидера")
-			return
 		}
 	}
+}
+
+// [ABONENT]
+func (a *Agent) initializeElectionForMySegment(segmentPeers []AgentPeerInfoPeer) {
+	segmentPeerInfos := make([]messages.InfoAboutSegmentPeerInfo, 0)
+
+	for _, peerInfo := range segmentPeers {
+		addrs := a.node.PeerAddrs(peerInfo.ID)
+
+		segmentPeerInfos = append(segmentPeerInfos, messages.InfoAboutSegmentPeerInfo{
+			ID:    peerInfo.ID,
+			IsHub: peerInfo.IsHub,
+			Addrs: addrs,
+		})
+	}
+
+	body := messages.ElectionRequestMessageBody{
+		Peers: segmentPeerInfos,
+	}
+
+	log.Println("ЗАПРОС ИНИЦИАЛИЗАЦИИ ВЫБОРОВ", segmentPeerInfos)
+
+	if marshaledBody, err := json.Marshal(body); err != nil {
+		log.Println("Ошибка при маршалинге тела информации о себе:", err)
+		return
+	} else {
+		infoAboutSegmentMessage := messages.Message{
+			Type: messages.ElectionRequestMessageType,
+			Body: marshaledBody,
+		}
+
+		if marshalledMessage, err := json.Marshal(infoAboutSegmentMessage); err != nil {
+			log.Printf("Ошибка при маршаллинге сообщения: %v\n", err)
+		} else {
+			for _, p := range segmentPeers {
+				if p.ID == a.node.Host.ID() {
+					continue
+				}
+
+				stream, err := a.node.Host.NewStream(context.Background(), p.ID, ProtocolID)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+
+				if _, err := stream.Write(append(marshalledMessage, '\n')); err != nil {
+					log.Println("Ошибка при отправке запроса:", err)
+					return
+				}
+
+				stream.Close()
+			}
+		}
+	}
+
+	a.prepareForElection(segmentPeers)
 }

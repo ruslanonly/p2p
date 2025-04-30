@@ -17,6 +17,8 @@ const (
 	BecomeOnlyOneHubMessageType          MessageType = "BecomeOnlyOneHubMessageType"
 	InfoAboutMeForHubsMessageType        MessageType = "InfoAboutMeForHubsMessageType"
 	InfoAboutSegmentMessageType          MessageType = "InfoAboutSegmentMessageType"
+
+	ElectionRequestMessageType MessageType = "ElectionRequestMessageType"
 )
 
 type Message struct {
@@ -56,6 +58,10 @@ type ConnectedMessageBody struct {
 }
 
 type InitializeElectionRequestMessageBody struct {
+	Peers []InfoAboutSegmentPeerInfo `json:"peers"`
+}
+
+type ElectionRequestMessageBody struct {
 	Peers []InfoAboutSegmentPeerInfo `json:"peers"`
 }
 
