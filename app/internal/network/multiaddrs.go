@@ -19,3 +19,13 @@ func MultiaddrsStrsToMultiaddrs(multiaddrStrs []string) ([]multiaddr.Multiaddr, 
 
 	return mas, nil
 }
+
+func MultiaddrsToMultiaddrStrs(mas []multiaddr.Multiaddr) []string {
+	var masStrs []string
+
+	for _, ma := range mas {
+		masStrs = append(masStrs, ma.String())
+	}
+
+	return masStrs
+}

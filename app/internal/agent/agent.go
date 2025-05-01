@@ -139,6 +139,23 @@ func (a *Agent) getHubSlotsStatus() messages.HubSlotsStatus {
 	return status
 }
 
+func (a *Agent) disconnectPeer(peerID peer.ID) {
+	for _, conn := range a.node.Host.Network().ConnsToPeer(peerID) {
+		_ = conn.Close()
+	}
+	a.node.Host.Peerstore().RemovePeer(peerID)
+	a.node.Host.ConnManager().Unprotect(peerID, "permanent")
+	delete(a.peers, peerID)
+}
+
+func (a *Agent) disconnectAllPeers() {
+	for peerID := range a.peers {
+		a.disconnectPeer(peerID)
+	}
+
+	a.peers = make(map[peer.ID]AgentPeerInfo)
+}
+
 func (a *Agent) Start(options *StartOptions) {
 	a.node.PrintHostInfo()
 
@@ -177,6 +194,9 @@ func (a *Agent) Start(options *StartOptions) {
 					ticker := time.NewTicker(20 * time.Second)
 					defer ticker.Stop()
 
+					a.broadcastToHubsInfoAboutMe()
+					a.broadcastToSegmentInfoAboutSegment()
+
 					for {
 						select {
 						case <-ctx.Done():
@@ -214,7 +234,6 @@ func (a *Agent) Start(options *StartOptions) {
 					return
 				}
 
-				log.Println("ВЫБОРЫ", segmentPeers)
 				if initialize {
 					a.initializeElectionForMySegment(segmentPeers)
 				} else {
@@ -233,6 +252,15 @@ func (a *Agent) Start(options *StartOptions) {
 		// Узел начинает свою работу как хаб
 		a.fsm.Event(fsm.BecomeHubAgentFSMEvent)
 	}
+
+	notifiee := network.Notifiee{
+		OnDisconnect: func(peerID peer.ID) {
+			fmt.Println("❌ Отключение от :", peerID)
+			a.disconnectPeer(peerID)
+		},
+	}
+
+	a.node.Host.Network().Notify(&notifiee)
 
 	<-a.ctx.Done()
 	fmt.Println("Агент выключается...")
@@ -261,6 +289,8 @@ func (a *Agent) isAbonent() bool {
 
 func (a *Agent) bootstrap(addr, peerID string) {
 	period := 10 * time.Second
+
+	a.disconnectAllPeers()
 
 	addrWithPeerID := fmt.Sprintf("%s/p2p/%s", addr, peerID)
 	maddr, err := multiaddr.NewMultiaddr(addrWithPeerID)
@@ -292,6 +322,8 @@ func (a *Agent) bootstrap(addr, peerID string) {
 			}
 			time.Sleep(period)
 		} else {
+			a.node.Host.ConnManager().Protect(hubAddrInfo.ID, "permanent")
+
 			s, err := a.node.Host.NewStream(context.Background(), hubAddrInfo.ID, ProtocolID)
 			if err != nil {
 				log.Println(err)
@@ -431,6 +463,14 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 		if err != nil {
 			log.Printf("Ошибка при FSM переходе: %v", err)
 		}
+	} else if msg.Type == messages.InfoAboutMeForHubsMessageType {
+		var infoAboutHub messages.InfoAboutMeForHubsMessageBody
+		if err := json.Unmarshal([]byte(msg.Body), &infoAboutHub); err != nil {
+			log.Println("Ошибка при парсинге ответа:", err)
+			return
+		}
+
+		a.handleInfoAboutHub(infoAboutHub)
 	}
 }
 
@@ -517,6 +557,9 @@ func (a *Agent) handleConnectedOnConnectionRequest(stream libp2pNetwork.Stream) 
 
 // [HUB] Отправление информации о себе хабам
 func (a *Agent) broadcastToHubsInfoAboutMe() {
+	a.peersMutex.RLock()
+	defer a.peersMutex.RUnlock()
+
 	status := a.getHubSlotsStatus()
 
 	hubs, _ := a.getSplittedPeers()
@@ -532,6 +575,7 @@ func (a *Agent) broadcastToHubsInfoAboutMe() {
 
 	infoAboutMe := messages.InfoAboutMeForHubsMessageBody{
 		ID:     a.node.Host.ID().String(),
+		Addrs:  network.MultiaddrsToMultiaddrStrs(a.node.Host.Addrs()),
 		Status: status,
 	}
 
@@ -555,8 +599,34 @@ func (a *Agent) broadcastToHubsInfoAboutMe() {
 	}
 }
 
+// [ABONENT]
+func (a *Agent) handleInfoAboutHub(info messages.InfoAboutMeForHubsMessageBody) {
+	a.peersMutex.Lock()
+	defer a.peersMutex.Unlock()
+
+	peerID, err := peer.Decode(info.ID)
+	if err != nil {
+		log.Println("❌ Не удалось декодировать info.ID в peer.ID:", info.ID, err)
+		return
+	}
+
+	p, found := a.peers[peerID]
+	if !found {
+		return
+	}
+
+	if !p.IsHub {
+		p.IsHub = true
+		a.peers[peerID] = p
+		log.Printf("☝️ Пир %s стал хабом", info.ID)
+	}
+}
+
 // [HUB]
 func (a *Agent) broadcastToSegmentInfoAboutSegment() {
+	a.peersMutex.RLock()
+	defer a.peersMutex.RUnlock()
+
 	_, abonents := a.getSplittedPeers()
 	abonentsPeerIDs := make([]peer.ID, 0)
 	abonentsPeerInfos := make([]messages.InfoAboutSegmentPeerInfo, 0)
@@ -605,17 +675,17 @@ func (a *Agent) handleInfoAboutSegment(hubID peer.ID, peers []messages.InfoAbout
 	a.peersMutex.Lock()
 	defer a.peersMutex.Unlock()
 
+	if _, ok := a.peers[hubID]; !ok {
+		log.Println("Это не мой хаб: ", hubID)
+		return
+	}
+
 	for _, p := range peers {
 		mas, err := network.MultiaddrsStrsToMultiaddrs(p.Addrs)
 
 		if err != nil {
 			log.Printf("Возникла ошибка при обработке адресов пира %s: %v", p.ID, err)
 			continue
-		}
-
-		info := peer.AddrInfo{
-			ID:    p.ID,
-			Addrs: mas,
 		}
 
 		connectedness := a.node.Host.Network().Connectedness(p.ID)
@@ -627,9 +697,15 @@ func (a *Agent) handleInfoAboutSegment(hubID peer.ID, peers []messages.InfoAbout
 				IsHub: p.IsHub,
 			}
 		} else {
+			info := peer.AddrInfo{
+				ID:    p.ID,
+				Addrs: mas,
+			}
+
 			if err := a.node.Connect(info); err != nil {
 				log.Printf("Возникла ошибка при подключении пира %s: %v", p.ID, err)
 			} else {
+				a.node.Host.ConnManager().Protect(info.ID, "permanent")
 				a.peers[hubID].Peers[p.ID] = AgentPeerInfoPeer{
 					ID:    p.ID,
 					Addrs: p.Addrs,
@@ -638,7 +714,8 @@ func (a *Agent) handleInfoAboutSegment(hubID peer.ID, peers []messages.InfoAbout
 			}
 		}
 	}
-	// log.Printf("Пиры хаба после получения информации о сегменте: %v", a.peers[hubID].Peers)
+
+	log.Printf("🟦 Мои пиры %d --- %v", len(a.peers), a.peers)
 }
 
 // [HUB]

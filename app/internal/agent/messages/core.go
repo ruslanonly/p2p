@@ -43,7 +43,7 @@ const (
 
 type InfoAboutMeForHubsMessageBody struct {
 	ID     string         `json:"id"`
-	Addrs  string         `json:"addrs"`
+	Addrs  []string       `json:"addrs"`
 	Status HubSlotsStatus `json:"status"`
 }
 
