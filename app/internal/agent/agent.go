@@ -611,7 +611,7 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 	defer a.peersMutex.Unlock()
 	slotsStatus := a.getHubSlotsStatus()
 
-	log.Printf("🔱 Мой статус: %s", slotsStatus, a.peers)
+	log.Printf("🔱 Мой статус: %s", slotsStatus)
 	if slotsStatus == defaultprotomessages.FreeHubSlotsStatus {
 		a.handleConnectedOnConnectionRequest(stream)
 	} else {
@@ -671,7 +671,7 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 				if marshalledBody, err := json.Marshal(*body); err != nil {
 					log.Println("Ошибка при маршалинге информации о свободных хабах для подключения:", err)
 				} else {
-					fmt.Println("❤️‍🔥 Подключайся сюда", body)
+					fmt.Printf("❤️‍🔥 Подключайся к этому хабу: %v", body)
 					msg = defaultprotomessages.Message{
 						Type: defaultprotomessages.NotConnectedMessageType,
 						Body: marshalledBody,
@@ -910,8 +910,6 @@ func (a *Agent) handleInfoAboutSegment(hubID peer.ID, peers []defaultprotomessag
 			}
 		}
 	}
-
-	log.Printf("🟦 Мои пиры %d --- %v", len(a.peers), a.peers)
 }
 
 // [HUB]
