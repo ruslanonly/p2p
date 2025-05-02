@@ -30,6 +30,11 @@ type ConnectRequestMessageBody struct {
 	ID string `json:"ip"`
 }
 
+type NotConnectedMessageBody struct {
+	ID    peer.ID  `json:"id"`
+	Addrs []string `json:"addrs"`
+}
+
 type HubSlotsStatus string
 
 const (
