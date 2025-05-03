@@ -19,14 +19,14 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	looplabFSM "github.com/looplab/fsm"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/ruslanonly/p2p/internal/agent/model"
-	"github.com/ruslanonly/p2p/internal/agent/protocols/defaultproto"
-	defaultprotomessages "github.com/ruslanonly/p2p/internal/agent/protocols/defaultproto/messages"
-	"github.com/ruslanonly/p2p/internal/agent/protocols/pendinghubproto"
-	pendinghubprotomessages "github.com/ruslanonly/p2p/internal/agent/protocols/pendinghubproto/messages"
-	"github.com/ruslanonly/p2p/internal/consensus/hubelection"
-	"github.com/ruslanonly/p2p/internal/fsm"
-	"github.com/ruslanonly/p2p/internal/network"
+	"github.com/ruslanonly/agent/internal/agent/model"
+	"github.com/ruslanonly/agent/internal/agent/protocols/defaultproto"
+	defaultprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/defaultproto/messages"
+	"github.com/ruslanonly/agent/internal/agent/protocols/pendinghubproto"
+	pendinghubprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/pendinghubproto/messages"
+	"github.com/ruslanonly/agent/internal/consensus/hubelection"
+	"github.com/ruslanonly/agent/internal/fsm"
+	"github.com/ruslanonly/agent/internal/network"
 )
 
 type AgentPeerInfoPeer struct {

@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	agentPkg "github.com/ruslanonly/p2p/internal/agent"
+	agentPkg "github.com/ruslanonly/agent/internal/agent"
 )
 
 func main() {
