@@ -4,8 +4,13 @@ go 1.23.1
 
 require github.com/looplab/fsm v1.0.2
 
+require pkg v0.0.0
+
+replace pkg => ../pkg
+
 require (
 	github.com/DarthPestilane/easytcp v0.4.0 // indirect
+	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -37,6 +42,7 @@ require (
 	github.com/ipfs/go-cid v0.5.0 // indirect
 	github.com/ipfs/go-log/v2 v2.5.1 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
+	github.com/james-barrow/golang-ipc v1.2.4 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Запуск agent и pcap параллельно
+/app/traffic &
 /app/agent &
-/app/pcap &
 
 # Ожидание обоих процессов
 wait
