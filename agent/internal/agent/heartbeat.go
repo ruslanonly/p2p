@@ -55,15 +55,15 @@ func (a *Agent) checkAllPeersHeartbeat() {
 	}
 
 	for _, peerInfo := range a.peers {
+		// log.Printf("❤️❤️❤️: %s\n", peerInfo.ID)
 		s, err := a.node.Host.NewStream(context.Background(), peerInfo.ID, heartbeatproto.ProtocolID)
 		if err != nil {
-			log.Println(err)
+			a.disconnectPeer(peerInfo.ID, false)
 			return
 		}
 
 		if _, err := s.Write(append(marshalledMessage, '\n')); err != nil {
-			log.Printf("Ошибка при отправке проверки heartbeat: %v\n", err)
-			a.disconnectPeer(peerInfo.ID)
+			a.disconnectPeer(peerInfo.ID, false)
 		}
 
 		s.Close()

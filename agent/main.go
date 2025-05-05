@@ -11,7 +11,7 @@ import (
 func main() {
 	port := 5000
 
-	agent, err := agentPkg.NewAgent(context.Background(), 2, port)
+	agent, err := agentPkg.NewAgent(context.Background(), 3, port)
 	if err != nil {
 		log.Fatalf("Ошибка при инициализации узла: %v", err)
 	}

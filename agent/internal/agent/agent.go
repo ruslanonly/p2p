@@ -149,21 +149,48 @@ func (a *Agent) getHubSlotsStatus() defaultprotomessages.HubSlotsStatus {
 	return status
 }
 
-func (a *Agent) disconnectPeer(peerID peer.ID) {
+func (a *Agent) disconnectPeer(peerID peer.ID, notify bool) {
+	fmt.Printf("❌ Отключение от пира: %s\n", peerID)
+
+	if notify {
+		s, err := a.node.Host.NewStream(context.Background(), peerID, defaultproto.ProtocolID)
+		if err != nil {
+			log.Printf("Ошибка при отправке уведомления об отключении: %v\n", err)
+			return
+		}
+
+		msg := defaultprotomessages.Message{
+			Type: defaultprotomessages.DisconnectMessageType,
+		}
+
+		if err := json.NewEncoder(s).Encode(msg); err != nil {
+			log.Printf("Ошибка при отправке уведомления об отключении: %v\n", err)
+			return
+		}
+
+		s.Close()
+	}
+
 	for _, conn := range a.node.Host.Network().ConnsToPeer(peerID) {
 		_ = conn.Close()
 	}
 	a.node.Host.Peerstore().RemovePeer(peerID)
-	a.node.Host.ConnManager().Unprotect(peerID, "permanent")
 	delete(a.peers, peerID)
 }
 
 func (a *Agent) disconnectAllPeers() {
-	for peerID := range a.peers {
-		a.disconnectPeer(peerID)
+	a.peersMutex.Lock()
+	defer a.peersMutex.Unlock()
+
+	peerIDs := make([]peer.ID, 0)
+	for pid := range a.peers {
+		peerIDs = append(peerIDs, pid)
 	}
 
-	a.peers = make(map[peer.ID]AgentPeerInfo)
+	log.Printf("Отключение от пиров: %v", peerIDs)
+	for _, pid := range peerIDs {
+		a.disconnectPeer(pid, true)
+	}
 }
 
 func (a *Agent) Start(options *StartOptions) {
@@ -191,8 +218,10 @@ func (a *Agent) Start(options *StartOptions) {
 				a.bootstrap(bootstrapAddr, bootstrapPeerID)
 			},
 			fsm.EnterStateFSMCallbackName(fsm.ListeningMessagesAsHubAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
-				a.startStream()
-				a.startHeartbeatStream()
+				_, found := e.FSM.Metadata("infoAboutMeCtx")
+				if found {
+					return
+				}
 
 				infoAboutMeCtx, infoAboutMeCancelCtx := context.WithCancel(context.Background())
 
@@ -222,12 +251,21 @@ func (a *Agent) Start(options *StartOptions) {
 
 			},
 			fsm.EnterStateFSMCallbackName(fsm.ListeningMessagesAsAbonentAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
-				a.startStream()
-				a.startHeartbeatStream()
+
 			},
-			fsm.OrganizingSegmentHubElectionAgentFSMState: func(e_ context.Context, e *looplabFSM.Event) {
-				a.organizeSegmentHubElection()
-				e.FSM.Event(e_, fsm.OrganizingSegmentHubElectionIsCompletedAgentFSMEvent)
+			fsm.EnterStateFSMCallbackName(fsm.OrganizingSegmentHubElectionAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
+				peerIDs := a.organizeSegmentHubElection()
+				if len(peerIDs) == 0 {
+					e.FSM.Event(e_, fsm.OrganizingSegmentHubElectionIsCompletedAgentFSMEvent)
+					return
+				}
+
+				fmt.Printf("❇️ ОРГАНИЗОВАНЫ ВЫБОРЫ ДЛЯ %v\n", peerIDs)
+				a.fsm.FSM.SetMetadata("organizedElectionPeerIDs", peerIDs)
+			},
+			fsm.LeaveStateFSMCallbackName(fsm.OrganizingSegmentHubElectionAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
+				a.fsm.FSM.DeleteMetadata("organizedElectionPeerIDs")
+				fmt.Println("❇️ ВЫБОРЫ ЗАВЕРШИЛИСЬ")
 
 			},
 			fsm.EnterStateFSMCallbackName(fsm.ElectingNewHubAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
@@ -281,14 +319,8 @@ func (a *Agent) Start(options *StartOptions) {
 		a.fsm.Event(fsm.BecomeHubAgentFSMEvent)
 	}
 
-	notifiee := network.Notifiee{
-		OnDisconnect: func(peerID peer.ID) {
-			fmt.Println("❌ Отключение от :", peerID)
-			a.disconnectPeer(peerID)
-		},
-	}
-
-	a.node.Host.Network().Notify(&notifiee)
+	a.startStream()
+	a.startHeartbeatStream()
 
 	go a.trafficMngr.Listen(a.IPCHandler)
 	go func(ctx context.Context) {
@@ -312,9 +344,9 @@ func (a *Agent) Start(options *StartOptions) {
 }
 
 func (a *Agent) bootstrap(addr, peerID string) {
-	period := 10 * time.Second
-
 	a.disconnectAllPeers()
+
+	period := 10 * time.Second
 
 	addrWithPeerID := fmt.Sprintf("%s/p2p/%s", addr, peerID)
 	maddr, err := multiaddr.NewMultiaddr(addrWithPeerID)
@@ -346,8 +378,6 @@ func (a *Agent) bootstrap(addr, peerID string) {
 			}
 			time.Sleep(period)
 		} else {
-			a.node.Host.ConnManager().Protect(hubAddrInfo.ID, "permanent")
-
 			s, err := a.node.Host.NewStream(context.Background(), hubAddrInfo.ID, defaultproto.ProtocolID)
 			if err != nil {
 				log.Println(err)
@@ -509,6 +539,8 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 		}
 
 		a.handleInfoAboutHub(infoAboutHub)
+	} else if msg.Type == defaultprotomessages.DisconnectMessageType {
+		a.disconnectPeer(stream.Conn().RemotePeer(), false)
 	}
 }
 
@@ -518,7 +550,7 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 	defer a.peersMutex.Unlock()
 	slotsStatus := a.getHubSlotsStatus()
 
-	log.Printf("🔱 Мой статус: %s", slotsStatus)
+	log.Printf("🔱 Мой статус: %s %v", slotsStatus, a.peers)
 	if slotsStatus == defaultprotomessages.FreeHubSlotsStatus {
 		a.handleConnectedOnConnectionRequest(stream)
 	} else {
@@ -535,7 +567,7 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 			}
 
 			a.addPendingHubPeer(addrInfo)
-
+			fmt.Printf("CAAAAAAN ORGANIZE ELECTION %t\n", a.fsm.FSM.Can(fsm.OrganizeSegmentHubElectionAgentFSMEvent))
 			if a.fsm.FSM.Can(fsm.OrganizeSegmentHubElectionAgentFSMEvent) {
 				a.fsm.Event(fsm.OrganizeSegmentHubElectionAgentFSMEvent)
 			}
@@ -714,7 +746,19 @@ func (a *Agent) handleInfoAboutHub(info defaultprotomessages.InfoAboutMeForHubsM
 		}
 
 		a.peers[peerID] = p
-		log.Printf("☝️ Пир %s стал хабом", info.ID)
+		log.Printf("☝️ Пир %s стал хабом", peerID)
+
+		peerIDsRaw, foundPeerIDs := a.fsm.FSM.Metadata("organizedElectionPeerIDs")
+		if foundPeerIDs {
+			peerIDs, ok := peerIDsRaw.([]peer.ID)
+			if !ok {
+				return
+			}
+
+			if slices.Contains(peerIDs, peerID) {
+				a.fsm.Event(fsm.OrganizingSegmentHubElectionIsCompletedAgentFSMEvent)
+			}
+		}
 	}
 }
 
@@ -808,7 +852,6 @@ func (a *Agent) handleInfoAboutSegment(hubID peer.ID, peers []defaultprotomessag
 			if err := a.node.Connect(info); err != nil {
 				log.Printf("Возникла ошибка при подключении пира %s: %v", p.ID, err)
 			} else {
-				a.node.Host.ConnManager().Protect(info.ID, "permanent")
 				a.peers[hubID].Peers[p.ID] = AgentPeerInfoPeer{
 					ID:     p.ID,
 					Addrs:  p.Addrs,

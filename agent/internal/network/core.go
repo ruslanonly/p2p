@@ -19,7 +19,7 @@ type LibP2PNode struct {
 }
 
 func NewLibP2PNode(ctx context.Context, port int) (*LibP2PNode, error) {
-	connManager, err := connmgr.NewConnManager(2, 3, connmgr.WithGracePeriod(time.Second))
+	connManager, err := connmgr.NewConnManager(100, 200, connmgr.WithGracePeriod(time.Second))
 
 	if err != nil {
 		return nil, err

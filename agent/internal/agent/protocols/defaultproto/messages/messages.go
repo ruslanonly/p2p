@@ -17,8 +17,10 @@ const (
 	BecomeOnlyOneHubMessageType          MessageType = "BecomeOnlyOneHubMessageType"
 	InfoAboutMeForHubsMessageType        MessageType = "InfoAboutMeForHubsMessageType"
 	InfoAboutSegmentMessageType          MessageType = "InfoAboutSegmentMessageType"
+	ElectionRequestMessageType           MessageType = "ElectionRequestMessageType"
 
-	ElectionRequestMessageType MessageType = "ElectionRequestMessageType"
+	// Узел отправляет хабу в случае, когда ему необходимо уведомить хаба об отключении
+	DisconnectMessageType MessageType = "DisconnectMessageType"
 )
 
 type Message struct {

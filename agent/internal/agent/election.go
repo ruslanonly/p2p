@@ -17,11 +17,13 @@ import (
 	"github.com/ruslanonly/agent/internal/fsm"
 )
 
-func (a *Agent) organizeSegmentHubElection() {
+func (a *Agent) organizeSegmentHubElection() []peer.ID {
 	_, abonents := a.getSplittedPeers()
 
+	peerIDs := make([]peer.ID, 0)
+
 	if len(abonents) < 1 {
-		return
+		return nil
 	} else {
 		var abonent AgentPeerInfo
 		for _, a := range abonents {
@@ -45,6 +47,7 @@ func (a *Agent) organizeSegmentHubElection() {
 
 			for peerID, peerInfo := range abonents {
 				addrs := a.node.PeerAddrs(peerID)
+				peerIDs = append(peerIDs, peerID)
 
 				abonentsPeerInfos = append(abonentsPeerInfos, defaultprotomessages.InfoAboutSegmentPeerInfo{
 					ID:    peerID,
@@ -59,7 +62,7 @@ func (a *Agent) organizeSegmentHubElection() {
 
 			if marshaledBody, err := json.Marshal(body); err != nil {
 				log.Println("Ошибка при маршалинге тела InitializeElectionRequestMessageBody:", err)
-				return
+				return nil
 			} else {
 				message = defaultprotomessages.Message{
 					Type: defaultprotomessages.InitializeElectionRequestMessageType,
@@ -72,16 +75,18 @@ func (a *Agent) organizeSegmentHubElection() {
 		s, err := a.node.Host.NewStream(context.Background(), abonent.ID, defaultproto.ProtocolID)
 		if err != nil {
 			log.Println(err)
-			return
+			return nil
 		}
 
 		if err := json.NewEncoder(s).Encode(message); err != nil {
 			log.Println("Ошибка при отправке запроса:", err)
-			return
+			return nil
 		}
 
 		s.Close()
 	}
+
+	return peerIDs
 }
 
 func (a *Agent) prepareForElection(segmentPeers []AgentPeerInfoPeer) {
