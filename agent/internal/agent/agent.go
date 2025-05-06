@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"pkg/threats"
 	"regexp"
 	"slices"
 	"strings"
@@ -16,12 +17,12 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	looplabFSM "github.com/looplab/fsm"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/ruslanonly/agent/config"
 	"github.com/ruslanonly/agent/internal/agent/model"
 	"github.com/ruslanonly/agent/internal/agent/protocols/defaultproto"
 	defaultprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/defaultproto/messages"
 	"github.com/ruslanonly/agent/internal/agent/protocols/pendinghubproto"
 	"github.com/ruslanonly/agent/internal/fsm"
-	iipc "github.com/ruslanonly/agent/internal/ipc"
 	"github.com/ruslanonly/agent/internal/network"
 )
 
@@ -41,7 +42,7 @@ type Agent struct {
 	node        *network.LibP2PNode
 	ctx         context.Context
 	fsm         *fsm.AgentFSM
-	trafficMngr *iipc.TrafficModule
+	threatsMngr *threats.ThreatsIPCClient
 
 	// Подключенные абоненты и хабы
 	peers      map[peer.ID]AgentPeerInfo
@@ -62,14 +63,14 @@ func NewAgent(ctx context.Context, peersLimit, port int) (*Agent, error) {
 		log.Fatalf("Возникла ошибка при инициализации агента: %v", err)
 	}
 
-	tm, err := iipc.NewTrafficModule()
+	tm, err := threats.NewThreatsIPCClient()
 	if err != nil {
 		log.Fatalf("Возникла ошибка при инициализации агента: %v", err)
 	}
 
 	agent := &Agent{
 		node:        libp2pNode,
-		trafficMngr: tm,
+		threatsMngr: tm,
 
 		ctx: ctx,
 
@@ -229,7 +230,7 @@ func (a *Agent) Start(options *StartOptions) {
 				e.FSM.SetMetadata("infoAboutMeCancelCtx", infoAboutMeCancelCtx)
 
 				go func(ctx context.Context) {
-					ticker := time.NewTicker(20 * time.Second)
+					ticker := time.NewTicker(config.BroadcastingInterval)
 					defer ticker.Stop()
 
 					a.broadcastToHubsInfoAboutMe()
@@ -295,7 +296,7 @@ func (a *Agent) Start(options *StartOptions) {
 					a.startPendingHubStream()
 				} else {
 					if shouldSleep, ok := e.Args[2].(bool); !ok || shouldSleep {
-						time.Sleep(10 * time.Second)
+						time.Sleep(config.ReconnectTimeout)
 					}
 
 					e.FSM.Event(e_, fsm.RequestConnectionFromAbonentToHubAgentFSMEvent, e.Args[0], e.Args[1])
@@ -322,9 +323,9 @@ func (a *Agent) Start(options *StartOptions) {
 	a.startStream()
 	a.startHeartbeatStream()
 
-	go a.trafficMngr.Listen(a.IPCHandler)
+	go a.threatsMngr.Listen(a.RedTrafficHandler, a.YellowTrafficHandler)
 	go func(ctx context.Context) {
-		ticker := time.NewTicker(20 * time.Second)
+		ticker := time.NewTicker(config.HeartbeatInterval)
 		defer ticker.Stop()
 
 		for {
@@ -346,7 +347,7 @@ func (a *Agent) Start(options *StartOptions) {
 func (a *Agent) bootstrap(addr, peerID string) {
 	a.disconnectAllPeers()
 
-	period := 10 * time.Second
+	period := config.ReconnectTimeout
 
 	addrWithPeerID := fmt.Sprintf("%s/p2p/%s", addr, peerID)
 	maddr, err := multiaddr.NewMultiaddr(addrWithPeerID)

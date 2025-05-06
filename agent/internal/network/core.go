@@ -73,7 +73,7 @@ func (n *LibP2PNode) Connect(peerInfo peer.AddrInfo) error {
 func (n *LibP2PNode) Stream(protocolID protocol.ID, peerID peer.ID, msg []byte) error {
 	stream, err := n.Host.NewStream(n.ctx, peerID, protocolID)
 	if err != nil {
-		fmt.Printf("Ошибка открытия протокола %s: %v", protocolID, err)
+		fmt.Printf("Ошибка открытия протокола %s: %v\n", protocolID, err)
 		return err
 	}
 
@@ -95,7 +95,7 @@ func (n *LibP2PNode) BroadcastToPeers(protocolID protocol.ID, peers []peer.ID, m
 
 		stream, err := n.Host.NewStream(n.ctx, peerID, protocolID)
 		if err != nil {
-			fmt.Printf("Ошибка открытия протокола %s: %v", protocolID, err)
+			fmt.Printf("Ошибка открытия протокола %s: %v\n", protocolID, err)
 			continue
 		}
 

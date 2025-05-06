@@ -1,7 +1,11 @@
 package agent
 
-import "pkg/ipc"
+import "pkg/threats/model"
 
-func (a *Agent) IPCHandler(msgType ipc.MessageType, data []byte) {
+func (a *Agent) RedTrafficHandler(body model.RedTrafficMessageTypeBody) {
+
+}
+
+func (a *Agent) YellowTrafficHandler(body model.YellowTrafficMessageTypeBody) {
 
 }

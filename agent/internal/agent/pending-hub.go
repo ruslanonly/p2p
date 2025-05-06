@@ -42,7 +42,6 @@ func (a *Agent) pendingHubStreamHandler(stream libp2pNetwork.Stream) {
 	}
 
 	if msg.Type == pendinghubprotomessages.TryConnectToMeMessageType {
-		log.Print("TryConnectToMeMessageType")
 		a.fsm.Event(
 			fsm.RequestConnectionFromAbonentToHubAgentFSMEvent,
 			stream.Conn().RemoteMultiaddr().String(),
