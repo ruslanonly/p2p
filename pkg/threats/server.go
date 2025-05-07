@@ -9,18 +9,20 @@ import (
 	ipc "github.com/james-barrow/golang-ipc"
 )
 
+// Threats IPC сервер осуществляет отправку информации о зловредных и подозрительных узлах.
+// Также предлагает возможность заблокировать или помиловать (разблокировать) хост по его IP
 type ThreatsIPCServer struct {
-	server *ipc.Client
+	server *ipc.Server
 }
 
 func NewThreatsIPCServer() (*ThreatsIPCServer, error) {
-	c, err := ipc.StartClient(PipeName, nil)
+	s, err := ipc.StartServer(PipeName, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	tm := &ThreatsIPCServer{
-		server: c,
+		server: s,
 	}
 
 	return tm, nil
@@ -44,24 +46,33 @@ func (tm *ThreatsIPCServer) YellowTrafficMessage(body model.YellowTrafficMessage
 
 func (tm *ThreatsIPCServer) Listen(
 	blockHostHandler func(body model.BlockHostMessageTypeBody),
+	mercyHostHandler func(body model.MercyHostMessageTypeBody),
 ) {
 	for {
 		message, err := tm.server.Read()
 
 		if err != nil {
-			fmt.Printf("📮 Ошибка при чтении сообщения по IPC: %v\n", err)
+			fmt.Printf("📮📮📮 Ошибка при чтении сообщения по IPC: %v\n", err)
 		}
 
-		fmt.Printf("📮 Новое сообщение по IPC: %v\n", message)
+		fmt.Printf("📮📮📮 Новое сообщение по IPC: %v\n", message)
 
-		if message.MsgType == int(model.RedTrafficMessageType) {
+		if message.MsgType == int(model.BlockHostMessageType) {
 			var body model.BlockHostMessageTypeBody
 			if err := json.Unmarshal([]byte(message.Data), &body); err != nil {
 				log.Println("Ошибка при парсинге сообщения:", err)
-				return
+				continue
 			}
 
 			blockHostHandler(body)
+		} else if message.MsgType == int(model.MercyHostMessageType) {
+			var body model.MercyHostMessageTypeBody
+			if err := json.Unmarshal([]byte(message.Data), &body); err != nil {
+				log.Println("Ошибка при парсинге сообщения:", err)
+				continue
+			}
+
+			mercyHostHandler(body)
 		}
 	}
 }

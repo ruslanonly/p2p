@@ -3,9 +3,10 @@
 package firewall
 
 import (
-	"fmt"
+	"bytes"
 	"net"
 	"os/exec"
+	"strings"
 )
 
 type darwinFirewall struct{}
@@ -15,10 +16,33 @@ func newFirewall() FirewallManager {
 }
 
 func (f *darwinFirewall) Block(ip net.IP) error {
-	rule := fmt.Sprintf("block drop from %s to any", ip)
-	return exec.Command("sh", "-c", fmt.Sprintf("echo '%s' | sudo pfctl -f -", rule)).Run()
+	cmd := exec.Command("sudo", "pfctl", "-t", "blocked_ips", "-T", "add", ip.String())
+	return cmd.Run()
 }
 
 func (f *darwinFirewall) Unblock(ip net.IP) error {
-	return fmt.Errorf("unblock для macOS требует кастомной реализации")
+	cmd := exec.Command("sudo", "pfctl", "-t", "blocked_ips", "-T", "delete", ip.String())
+	return cmd.Run()
+}
+
+func (f *darwinFirewall) BlockedList() []net.IP {
+	cmd := exec.Command("sudo", "pfctl", "-t", "blocked_ips", "-T", "show")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	var ips []net.IP
+	lines := bytes.Split(output, []byte("\n"))
+	for _, line := range lines {
+		ipStr := strings.TrimSpace(string(line))
+		if ipStr == "" {
+			continue
+		}
+		ip := net.ParseIP(ipStr)
+		if ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+	return ips
 }

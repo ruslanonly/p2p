@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"pkg/threats/model"
 
 	ipc "github.com/james-barrow/golang-ipc"
@@ -34,8 +35,8 @@ func (tm *ThreatsIPCClient) message(msgType model.MessageType, body interface{})
 	}
 }
 
-func (tm *ThreatsIPCClient) BlockHostMessage(body model.BlockHostMessageTypeBody) {
-	tm.message(model.BlockHostMessageType, body)
+func (tm *ThreatsIPCClient) BlockHostMessage(ip net.IP) {
+	tm.message(model.BlockHostMessageType, model.BlockHostMessageTypeBody{IP: ip})
 }
 
 func (tm *ThreatsIPCClient) Listen(
@@ -55,7 +56,7 @@ func (tm *ThreatsIPCClient) Listen(
 			var body model.RedTrafficMessageTypeBody
 			if err := json.Unmarshal([]byte(message.Data), &body); err != nil {
 				log.Println("Ошибка при парсинге сообщения:", err)
-				return
+				continue
 			}
 
 			redTrafficHandler(body)
@@ -63,11 +64,10 @@ func (tm *ThreatsIPCClient) Listen(
 			var body model.YellowTrafficMessageTypeBody
 			if err := json.Unmarshal([]byte(message.Data), &body); err != nil {
 				log.Println("Ошибка при парсинге сообщения:", err)
-				return
+				continue
 			}
 
 			yellowTrafficHandler(body)
 		}
-
 	}
 }

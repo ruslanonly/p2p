@@ -31,10 +31,9 @@ func main() {
 
 	var fw firewall.FirewallManager = firewall.New()
 
-	fw.Block(net.IPv4(byte(172), byte(18), byte(0), byte(2)))
-
 	cls := classifier.NewClassifier()
-	snf.Run(func(packet gopacket.Packet) {
+
+	go snf.Run(func(packet gopacket.Packet) {
 		parameters, err1 := classifier.ExtractTCPIPParameters(packet)
 
 		if err1 != nil {
@@ -47,14 +46,23 @@ func main() {
 
 		} else if trafficClass == classifierModel.YellowTrafficClass {
 			ipc.YellowTrafficMessage(threatsModel.YellowTrafficMessageTypeBody{
-				IP: parameters.SrcIP.String(),
+				IP: parameters.SrcIP,
 			})
 		} else {
-			ipc.RedTrafficMessage(threatsModel.RedTrafficMessageTypeBody{
-				IP: parameters.SrcIP.String(),
-			})
-
 			fw.Block(parameters.SrcIP)
+			ipc.RedTrafficMessage(threatsModel.RedTrafficMessageTypeBody{
+				IP: parameters.SrcIP,
+			})
 		}
 	})
+
+	ipc.Listen(
+		func(body threatsModel.BlockHostMessageTypeBody) {
+			log.Println("Блокировка FIREWALL")
+			fw.Block(net.IP(body.IP))
+		},
+		func(body threatsModel.MercyHostMessageTypeBody) {
+			fw.Unblock(net.IP(body.IP))
+		},
+	)
 }

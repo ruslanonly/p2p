@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"pkg/ma"
 	"pkg/threats"
 	"regexp"
 	"slices"
@@ -39,10 +40,10 @@ type AgentPeerInfo struct {
 }
 
 type Agent struct {
-	node        *network.LibP2PNode
-	ctx         context.Context
-	fsm         *fsm.AgentFSM
-	threatsMngr *threats.ThreatsIPCClient
+	node       *network.LibP2PNode
+	ctx        context.Context
+	fsm        *fsm.AgentFSM
+	threatsIPC *threats.ThreatsIPCClient
 
 	// Подключенные абоненты и хабы
 	peers      map[peer.ID]AgentPeerInfo
@@ -63,14 +64,14 @@ func NewAgent(ctx context.Context, peersLimit, port int) (*Agent, error) {
 		log.Fatalf("Возникла ошибка при инициализации агента: %v", err)
 	}
 
-	tm, err := threats.NewThreatsIPCClient()
+	threatsIPC, err := threats.NewThreatsIPCClient()
 	if err != nil {
 		log.Fatalf("Возникла ошибка при инициализации агента: %v", err)
 	}
 
 	agent := &Agent{
-		node:        libp2pNode,
-		threatsMngr: tm,
+		node:       libp2pNode,
+		threatsIPC: threatsIPC,
 
 		ctx: ctx,
 
@@ -219,6 +220,13 @@ func (a *Agent) Start(options *StartOptions) {
 				a.bootstrap(bootstrapAddr, bootstrapPeerID)
 			},
 			fsm.EnterStateFSMCallbackName(fsm.ListeningMessagesAsHubAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
+				if e.Src == fsm.IdleAgentFSMState ||
+					e.Src == fsm.ElectingNewHubAgentFSMState ||
+					e.Src == fsm.ListeningMessagesAsAbonentAgentFSMState {
+					a.startThreatsStream()
+					a.startHubStream()
+				}
+
 				_, found := e.FSM.Metadata("infoAboutMeCtx")
 				if found {
 					return
@@ -252,7 +260,15 @@ func (a *Agent) Start(options *StartOptions) {
 
 			},
 			fsm.EnterStateFSMCallbackName(fsm.ListeningMessagesAsAbonentAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
-
+				if e.Src == fsm.ConnectingToHubAgentFSMState {
+					a.startThreatsStream()
+				}
+			},
+			fsm.LeaveStateFSMCallbackName(fsm.ListeningMessagesAsAbonentAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
+				if e.Event == fsm.NotConnectedToHubAgentFSMEvent ||
+					e.Event == fsm.ElectNewHubRequestFSMEvent {
+					a.closeThreatsStream()
+				}
 			},
 			fsm.EnterStateFSMCallbackName(fsm.OrganizingSegmentHubElectionAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
 				peerIDs := a.organizeSegmentHubElection()
@@ -323,7 +339,7 @@ func (a *Agent) Start(options *StartOptions) {
 	a.startStream()
 	a.startHeartbeatStream()
 
-	go a.threatsMngr.Listen(a.RedTrafficHandler, a.YellowTrafficHandler)
+	go a.threatsIPC.Listen(a.RedTrafficIPCHandler, a.YellowTrafficIPCHandler)
 	go func(ctx context.Context) {
 		ticker := time.NewTicker(config.HeartbeatInterval)
 		defer ticker.Stop()
@@ -477,6 +493,9 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 	var msg defaultprotomessages.Message
 	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
 		log.Printf("Ошибка при парсинге сообщения: %v", err)
+
+		ip := ma.MultiaddrToIP(stream.Conn().RemoteMultiaddr())
+		a.threatsIPC.BlockHostMessage(ip)
 		return
 	}
 

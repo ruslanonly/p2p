@@ -72,6 +72,8 @@ func (n *LibP2PNode) Connect(peerInfo peer.AddrInfo) error {
 // One way
 func (n *LibP2PNode) Stream(protocolID protocol.ID, peerID peer.ID, msg []byte) error {
 	stream, err := n.Host.NewStream(n.ctx, peerID, protocolID)
+	defer stream.Close()
+
 	if err != nil {
 		fmt.Printf("Ошибка открытия протокола %s: %v\n", protocolID, err)
 		return err
@@ -82,8 +84,6 @@ func (n *LibP2PNode) Stream(protocolID protocol.ID, peerID peer.ID, msg []byte) 
 		fmt.Println("Ошибка отправление сообщения:", err)
 		return err
 	}
-	_ = stream.Close()
-
 	return nil
 }
 
