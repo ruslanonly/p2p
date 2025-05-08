@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net"
+	"slices"
 
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -48,7 +49,7 @@ func (a *Agent) BroadcastRedTrafficHubMessage(offenderIP net.IP) {
 		FromID:  a.node.Host.ID(),
 		Type:    hubprotomessages.RedTrafficMessageType,
 		Payload: offenderIP,
-		Visited: make([]peer.ID, 0),
+		Visited: []peer.ID{a.node.Host.ID()},
 	}
 
 	hubs, _ := a.getSplittedPeers()
@@ -61,10 +62,11 @@ func (a *Agent) BroadcastRedTrafficHubMessage(offenderIP net.IP) {
 		log.Println("Ошибка при маршалинге broadcast-сообщения о красном трафике среди хабов:", err)
 	} else {
 		a.node.BroadcastToPeers(hubproto.ProtocolID, hubIDs, marshalledMessage)
-		a.broadcastRedTrafficToAbonents(offenderIP)
+		a.broadcastBlockTrafficToAbonents(offenderIP)
 	}
 }
 
+// [HUB]
 func (a *Agent) redTrafficHandler(message hubprotomessages.Message) {
 	a.peersMutex.Lock()
 	defer a.peersMutex.Unlock()
@@ -78,7 +80,7 @@ func (a *Agent) redTrafficHandler(message hubprotomessages.Message) {
 
 	var offenderIP net.IP = message.Payload
 
-	log.Printf("🚨 Получено сообщение о красном трафике от IP: %s", offenderIP.String())
+	log.Printf("🚨 Получено сообщение о красном трафике от IP: %s", offenderIP)
 
 	a.threatsIPC.BlockHostMessage(offenderIP)
 
@@ -87,6 +89,10 @@ func (a *Agent) redTrafficHandler(message hubprotomessages.Message) {
 	hubs, _ := a.getSplittedPeers()
 	hubIDs := make([]peer.ID, 0)
 	for _, hub := range hubs {
+		if slices.Contains(message.Visited, hub.ID) || hub.ID == message.FromID {
+			continue
+		}
+
 		hubIDs = append(hubIDs, hub.ID)
 	}
 
@@ -94,20 +100,22 @@ func (a *Agent) redTrafficHandler(message hubprotomessages.Message) {
 		log.Println("Ошибка при маршалинге broadcast-сообщения о красном трафике среди хабов:", err)
 	} else {
 		a.node.BroadcastToPeers(hubproto.ProtocolID, hubIDs, marshalledMessage)
-		a.broadcastRedTrafficToAbonents(offenderIP)
+		a.broadcastBlockTrafficToAbonents(offenderIP)
 	}
 }
 
-func (a *Agent) broadcastRedTrafficToAbonents(offenderIP net.IP) {
+func (a *Agent) broadcastBlockTrafficToAbonents(offenderIP net.IP) {
 	message := threatsprotomessages.Message{
 		IP:   offenderIP,
 		Type: threatsprotomessages.BlockTrafficMessageType,
 	}
 
-	hubs, _ := a.getSplittedPeers()
+	log.Printf("🟪 Отправка информации о красном трафике своим абонентам %s", offenderIP)
+
+	_, abonents := a.getSplittedPeers()
 	peerIDs := make([]peer.ID, 0)
-	for _, hub := range hubs {
-		peerIDs = append(peerIDs, hub.ID)
+	for _, abonent := range abonents {
+		peerIDs = append(peerIDs, abonent.ID)
 	}
 
 	if marshalledMessage, err := json.Marshal(message); err != nil {

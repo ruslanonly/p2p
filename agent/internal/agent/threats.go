@@ -40,6 +40,7 @@ func (a *Agent) threatsStreamHandler(stream libp2pNetwork.Stream) {
 	}
 
 	if message.Type == threatsprotomessages.BlockTrafficMessageType {
+		log.Printf("🔳 Получено сообщение: необходимо заблокировать %s", message.IP)
 		a.threatsIPC.BlockHostMessage(message.IP)
 	}
 
@@ -52,6 +53,7 @@ func (a *Agent) informMyHubAboutRedTraffic(ip net.IP) {
 		return
 	}
 
+	log.Printf("🔳 Отправка информации о красном трафике своему хабу %s", myHub.ID)
 	s, err := a.node.Host.NewStream(context.Background(), myHub.ID, threatsproto.ProtocolID)
 	if err != nil {
 		return

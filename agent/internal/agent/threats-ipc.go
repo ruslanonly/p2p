@@ -9,8 +9,13 @@ func (a *Agent) RedTrafficIPCHandler(body model.RedTrafficMessageTypeBody) {
 	log.Printf("🎩 [IPC] Красный трафик %s", body.IP)
 	a.threatsIPC.BlockHostMessage(body.IP)
 
-	a.BroadcastRedTrafficHubMessage(body.IP) // TODO: Если является хабом
-	a.informMyHubAboutRedTraffic(body.IP)
+	if isHub, err := a.isHub(); err == nil {
+		if isHub {
+			a.BroadcastRedTrafficHubMessage(body.IP)
+		} else {
+			a.informMyHubAboutRedTraffic(body.IP)
+		}
+	}
 }
 
 func (a *Agent) YellowTrafficIPCHandler(body model.YellowTrafficMessageTypeBody) {

@@ -1,8 +1,10 @@
 #!/bin/bash
+set -euxo pipefail
 
-# Запуск agent и pcap параллельно
+echo "📦 Запуск threats"
 /app/threats &
+
+echo "📦 Запуск agent"
 /app/agent &
 
-# Ожидание обоих процессов
 wait

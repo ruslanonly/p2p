@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"pkg/ma"
 	"pkg/threats"
 	"regexp"
 	"slices"
@@ -64,7 +63,8 @@ func NewAgent(ctx context.Context, peersLimit, port int) (*Agent, error) {
 		log.Fatalf("Возникла ошибка при инициализации агента: %v", err)
 	}
 
-	threatsIPC, err := threats.NewThreatsIPCClient()
+	pipeName := threats.Pipename()
+	threatsIPC, err := threats.NewThreatsIPCClient(pipeName)
 	if err != nil {
 		log.Fatalf("Возникла ошибка при инициализации агента: %v", err)
 	}
@@ -195,6 +195,21 @@ func (a *Agent) disconnectAllPeers() {
 	}
 }
 
+func (a *Agent) isHub() (bool, error) {
+	isHubRaw, found := a.fsm.FSM.Metadata("isHub")
+	if found {
+		isHub, asserted := isHubRaw.(bool)
+		if asserted {
+			return isHub, nil
+		} else {
+			a.fsm.FSM.DeleteMetadata("isHub")
+			return false, fmt.Errorf("ошибка при определении статуса")
+		}
+	}
+
+	return false, fmt.Errorf("ошибка при определении статуса")
+}
+
 func (a *Agent) Start(options *StartOptions) {
 	a.node.PrintHostInfo()
 
@@ -220,6 +235,8 @@ func (a *Agent) Start(options *StartOptions) {
 				a.bootstrap(bootstrapAddr, bootstrapPeerID)
 			},
 			fsm.EnterStateFSMCallbackName(fsm.ListeningMessagesAsHubAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
+				e.FSM.SetMetadata("isHub", true)
+
 				if e.Src == fsm.IdleAgentFSMState ||
 					e.Src == fsm.ElectingNewHubAgentFSMState ||
 					e.Src == fsm.ListeningMessagesAsAbonentAgentFSMState {
@@ -260,6 +277,8 @@ func (a *Agent) Start(options *StartOptions) {
 
 			},
 			fsm.EnterStateFSMCallbackName(fsm.ListeningMessagesAsAbonentAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
+				e.FSM.SetMetadata("isHub", false)
+
 				if e.Src == fsm.ConnectingToHubAgentFSMState {
 					a.startThreatsStream()
 				}
@@ -493,9 +512,6 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 	var msg defaultprotomessages.Message
 	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
 		log.Printf("Ошибка при парсинге сообщения: %v", err)
-
-		ip := ma.MultiaddrToIP(stream.Conn().RemoteMultiaddr())
-		a.threatsIPC.BlockHostMessage(ip)
 		return
 	}
 
@@ -570,7 +586,7 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 	defer a.peersMutex.Unlock()
 	slotsStatus := a.getHubSlotsStatus()
 
-	log.Printf("🔱 Мой статус: %s %v", slotsStatus, a.peers)
+	log.Printf("🔱 Мой статус: %s", slotsStatus)
 	if slotsStatus == defaultprotomessages.FreeHubSlotsStatus {
 		a.handleConnectedOnConnectionRequest(stream)
 	} else {

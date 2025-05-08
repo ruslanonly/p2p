@@ -14,11 +14,13 @@ type ThreatsIPCClient struct {
 	client *ipc.Client
 }
 
-func NewThreatsIPCClient() (*ThreatsIPCClient, error) {
-	c, err := ipc.StartClient(PipeName, nil)
+func NewThreatsIPCClient(pipeName string) (*ThreatsIPCClient, error) {
+	c, err := ipc.StartClient(pipeName, nil)
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Println("📮 Запущен клиент")
 
 	tm := &ThreatsIPCClient{
 		client: c,

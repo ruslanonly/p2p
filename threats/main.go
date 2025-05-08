@@ -14,6 +14,8 @@ import (
 )
 
 func main() {
+	log.Println("🚀 [THREATS] Запуск threats...")
+
 	iface, err := sniffer.GetDefaultInterface()
 	if err != nil {
 		log.Fatalf("❌ Не удалось определить интерфейс: %v", err)
@@ -24,7 +26,8 @@ func main() {
 		log.Fatalf("❌ Не удалось запустить сниффер: %v", err)
 	}
 
-	ipc, err := threats.NewThreatsIPCServer()
+	pipeName := threats.Pipename()
+	ipc, err := threats.NewThreatsIPCServer(pipeName)
 	if err != nil {
 		log.Fatalf("❌ Не удалось инициализировать IPC-сервер: %v", err)
 	}
@@ -50,6 +53,8 @@ func main() {
 			})
 		} else {
 			fw.Block(parameters.SrcIP)
+			log.Printf("🛑 [FIREWALL] Блокировка узла %s", parameters.SrcIP)
+
 			ipc.RedTrafficMessage(threatsModel.RedTrafficMessageTypeBody{
 				IP: parameters.SrcIP,
 			})
@@ -58,11 +63,12 @@ func main() {
 
 	ipc.Listen(
 		func(body threatsModel.BlockHostMessageTypeBody) {
-			log.Println("Блокировка FIREWALL")
 			fw.Block(net.IP(body.IP))
+			log.Printf("🛑 [FIREWALL] Блокировка узла %s", body.IP)
 		},
 		func(body threatsModel.MercyHostMessageTypeBody) {
 			fw.Unblock(net.IP(body.IP))
+			log.Printf("🛑 [FIREWALL] Разблокировка узла %s", body.IP)
 		},
 	)
 }

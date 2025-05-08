@@ -15,11 +15,13 @@ type ThreatsIPCServer struct {
 	server *ipc.Server
 }
 
-func NewThreatsIPCServer() (*ThreatsIPCServer, error) {
-	s, err := ipc.StartServer(PipeName, nil)
+func NewThreatsIPCServer(pipeName string) (*ThreatsIPCServer, error) {
+	s, err := ipc.StartServer(pipeName, nil)
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Println("📮 Запущен сервер")
 
 	tm := &ThreatsIPCServer{
 		server: s,

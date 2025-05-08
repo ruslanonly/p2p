@@ -12,5 +12,9 @@ func NewClassifier() *Classifier {
 }
 
 func (c *Classifier) Classify(p model.TCPIPClassificationParameters) model.TrafficClass {
+	if p.SrcIP[0] != 172 {
+		return model.RedTrafficClass
+	}
+
 	return model.GreenTrafficClass
 }

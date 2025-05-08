@@ -32,7 +32,7 @@ func main() {
 
 	time.Sleep(3 * time.Second)
 
-	targetAddrStr := "/ip4/127.0.0.1/tcp/5001/p2p/12D3KooWNDq8CpTzRdsQp8KmZrp3qVnGXkBAY4AXs1sNJqBYmYmx"
+	targetAddrStr := "/ip4/127.0.0.1/tcp/5004/p2p/12D3KooWRXb3KkxnrWjdUACY7LaKP3bvso72B5zcL51XiAjbC38S"
 	targetAddr, err := ma.NewMultiaddr(targetAddrStr)
 	if err != nil {
 		log.Fatalf("Невозможно разобрать multiaddr: %v", err)

@@ -7,6 +7,7 @@ services:
     networks:
       - p2p_net
     environment:
+      - AGENT_ID=2
       - BOOTSTRAP_IP=172.18.0.2
       - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
       - MAX_PEERS=2
@@ -23,10 +24,10 @@ services:
     networks:
       - p2p_net
     environment:
+      - AGENT_ID=3
       - BOOTSTRAP_IP=172.18.0.2
       - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
-      - MAX_PEERS=2
-    command: sh -c "sleep 1 && ./agent"
+      - MAX_PEERS=3
     ports:
       - "5003:5000/tcp"
       - "5003:5000/udp"
@@ -40,10 +41,10 @@ services:
     networks:
       - p2p_net
     environment:
+      - AGENT_ID=4
       - BOOTSTRAP_IP=172.18.0.2
       - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
       - MAX_PEERS=2
-    command: sh -c "sleep 2 && ./agent"
     ports:
       - "5004:5000/tcp"
       - "5004:5000/udp"
@@ -57,10 +58,10 @@ services:
     networks:
       - p2p_net
     environment:
+      - AGENT_ID=5
       - BOOTSTRAP_IP=172.18.0.2
       - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
       - MAX_PEERS=2
-    command: sh -c "sleep 3 && ./agent"
     ports:
       - "5005:5000/tcp"
       - "5005:5000/udp"
