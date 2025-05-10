@@ -7,6 +7,7 @@ require github.com/google/gopacket v1.1.19
 require (
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/james-barrow/golang-ipc v1.2.4 // indirect
+	github.com/yalue/onnxruntime_go v1.19.0 // indirect
 	golang.org/x/mod v0.11.0 // indirect
 	golang.org/x/tools v0.9.1 // indirect
 )
