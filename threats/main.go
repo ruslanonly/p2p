@@ -34,16 +34,22 @@ func main() {
 
 	var fw firewall.FirewallManager = firewall.New()
 
+	aggregator, err := classifier.NewAggregator()
+	if err != nil {
+		log.Fatalf("❌ Не удалось инициализировать extractor параметров: %v", err)
+	}
+
 	cls := classifier.NewClassifier()
 
 	go snf.Run(func(packet gopacket.Packet) {
-		parameters, err1 := classifier.ExtractTCPIPParameters(packet)
+		parameters, err1 := aggregator.Extract(packet)
 
 		if err1 != nil {
 			return
 		}
 
-		trafficClass := cls.Classify(*parameters)
+		vector := aggregator.Vectorize(*parameters)
+		trafficClass := cls.Classify(vector)
 
 		if trafficClass == classifierModel.GreenTrafficClass {
 

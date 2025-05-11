@@ -1,7 +1,6 @@
 package classifier
 
 import (
-	"fmt"
 	"log"
 	"threats/internal/classifier/model"
 
@@ -12,19 +11,17 @@ type Classifier struct {
 }
 
 func NewClassifier() *Classifier {
-	return &Classifier{}
-}
-
-func (c *Classifier) Classify(p model.ClassificationParameters) model.TrafficClass {
 	err := onnx.InitializeEnvironment()
 	if err != nil {
 		log.Fatalf("failed to initialize environment: %v", err)
 	}
-	defer onnx.DestroyEnvironment()
 
-	inputVector := make([]float32, 120)
-	inputShape := onnx.Shape{1, 120}
-	inputTensor, err := onnx.NewTensor(inputShape, inputVector)
+	return &Classifier{}
+}
+
+func (c *Classifier) Classify(vector []float32) model.TrafficClass {
+	inputShape := onnx.Shape{1, 41}
+	inputTensor, err := onnx.NewTensor(inputShape, vector)
 	if err != nil {
 		log.Fatalf("failed to create input tensor: %v", err)
 	}
@@ -36,7 +33,7 @@ func (c *Classifier) Classify(p model.ClassificationParameters) model.TrafficCla
 	}
 
 	inputNames := []string{"input"}
-	outputNames := []string{"output"}
+	outputNames := []string{"probabilities"}
 
 	session, err := onnx.NewSession("model.onnx", inputNames, outputNames, []*onnx.Tensor[float32]{inputTensor}, []*onnx.Tensor[float32]{outputTensor})
 	if err != nil {
@@ -50,7 +47,6 @@ func (c *Classifier) Classify(p model.ClassificationParameters) model.TrafficCla
 	}
 
 	probs := outputTensor.GetData()
-	fmt.Println("Вероятности классов:", probs)
 
 	if probs[1] > probs[0] {
 		return model.RedTrafficClass

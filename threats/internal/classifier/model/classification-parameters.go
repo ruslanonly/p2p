@@ -2,7 +2,7 @@ package model
 
 import "net"
 
-type ClassificationParameters struct {
+type TrafficParameters struct {
 	SrcIP                  net.IP
 	Duration               float32
 	ProtocolType           string
@@ -26,6 +26,50 @@ type ClassificationParameters struct {
 	NumOutboundCmds        int
 	IsHostLogin            int
 	IsGuestLogin           int
+	Count                  float32
+	SrvCount               float32
+	SerrorRate             float32
+	SrvSerrorRate          float32
+	RerrorRate             float32
+	SrvRerrorRate          float32
+	SameSrvRate            float32
+	DiffSrvRate            float32
+	SrvDiffHostRate        float32
+	DstHostCount           float32
+	DstHostSrvCount        float32
+	DstHostSameSrvRate     float32
+	DstHostDiffSrvRate     float32
+	DstHostSameSrcPortRate float32
+	DstHostSrvDiffHostRate float32
+	DstHostSerrorRate      float32
+	DstHostSrvSerrorRate   float32
+	DstHostRerrorRate      float32
+	DstHostSrvRerrorRate   float32
+}
+
+type ClassificationParameters struct {
+	Duration               float32
+	ProtocolType           float32
+	Service                float32
+	Flag                   float32
+	SrcBytes               float32
+	DstBytes               float32
+	Land                   float32
+	WrongFragment          float32
+	Urgent                 float32
+	Hot                    float32
+	NumFailedLogins        float32
+	LoggedIn               float32
+	NumCompromised         float32
+	RootShell              float32
+	SuAttempted            float32
+	NumRoot                float32
+	NumFileCreations       float32
+	NumShells              float32
+	NumAccessFiles         float32
+	NumOutboundCmds        float32
+	IsHostLogin            float32
+	IsGuestLogin           float32
 	Count                  float32
 	SrvCount               float32
 	SerrorRate             float32

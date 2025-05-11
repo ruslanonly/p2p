@@ -5,6 +5,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import classification_report
 from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
+import json
 
 df = pd.read_csv("./datasets/kddcup.data.corrected", header=None)
 
@@ -24,27 +25,30 @@ df.columns = column_names
 
 df["label"] = df["label"].apply(lambda x: "green" if x == "normal." else "red")
 
-df = pd.get_dummies(df, columns=["protocol_type", "service", "flag"])
+category_columns = ["protocol_type", "service", "flag"]
+for col in category_columns:
+    le = LabelEncoder()
+    df[col] = le.fit_transform(df[col])
+    mapping = {str(k): int(v) for k, v in zip(le.classes_, le.transform(le.classes_))}
+
+    with open(f"{col}_mapping.json", "w") as f:
+        json.dump(mapping, f, indent=2)
 
 y = df["label"]
 X = df.drop(columns=["label"])
 
-le = LabelEncoder()
-y_encoded = le.fit_transform(y)
+le_y = LabelEncoder()
+y_encoded = le_y.fit_transform(y)
 
 X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42)
 
 clf = DecisionTreeClassifier(max_depth=5)
 clf.fit(X_train, y_train)
 
-y_proba = clf.predict_proba(X_test)
+print("Классы:", le_y.classes_)
 
-print("Классы:", le.classes_)
-print("Пример вероятностей:")
-print(y_proba[0])
-
-initial_type = [("input", FloatTensorType([None, X.shape[1]]))]
+initial_type = [("input", FloatTensorType([None, X.shape[1]]))]  # X.shape[1] = 41
 onnx_model = convert_sklearn(clf, initial_types=initial_type, options={id(clf): {"zipmap": False}})
 
-with open("kdd_decision_tree.onnx", "wb") as f:
+with open("model.onnx", "wb") as f:
     f.write(onnx_model.SerializeToString())
