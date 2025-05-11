@@ -291,12 +291,13 @@ func (a *Agent) Start(options *StartOptions) {
 			},
 			fsm.EnterStateFSMCallbackName(fsm.OrganizingSegmentHubElectionAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
 				peerIDs := a.organizeSegmentHubElection()
+				fmt.Printf("❇️ ОРГАНИЗОВАНЫ ВЫБОРЫ ДЛЯ %v %v\n", peerIDs, a.peers)
+
 				if len(peerIDs) == 0 {
 					e.FSM.Event(e_, fsm.OrganizingSegmentHubElectionIsCompletedAgentFSMEvent)
 					return
 				}
 
-				fmt.Printf("❇️ ОРГАНИЗОВАНЫ ВЫБОРЫ ДЛЯ %v\n", peerIDs)
 				a.fsm.FSM.SetMetadata("organizedElectionPeerIDs", peerIDs)
 			},
 			fsm.LeaveStateFSMCallbackName(fsm.OrganizingSegmentHubElectionAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
@@ -528,10 +529,14 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 
 		a.handleInfoAboutSegment(stream.Conn().RemotePeer(), body.Peers)
 
-		segmentPeersMap := a.getSegmentPeers()
 		segmentPeersArr := make([]AgentPeerInfoPeer, 0)
-		for _, p := range segmentPeersMap {
-			segmentPeersArr = append(segmentPeersArr, p)
+		for _, p := range body.Peers {
+			agentPeerInfoPeer := AgentPeerInfoPeer{
+				ID:     p.ID,
+				Addrs:  p.Addrs,
+				status: model.AbonentP2PStatus,
+			}
+			segmentPeersArr = append(segmentPeersArr, agentPeerInfoPeer)
 		}
 
 		log.Println("🚩 Я должен начать выборы")
@@ -603,9 +608,11 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 			}
 
 			a.addPendingHubPeer(addrInfo)
-			fmt.Printf("CAAAAAAN ORGANIZE ELECTION %t\n", a.fsm.FSM.Can(fsm.OrganizeSegmentHubElectionAgentFSMEvent))
 			if a.fsm.FSM.Can(fsm.OrganizeSegmentHubElectionAgentFSMEvent) {
+				fmt.Println("👍 Can Organize Hub Elections", a.peers)
 				a.fsm.Event(fsm.OrganizeSegmentHubElectionAgentFSMEvent)
+			} else {
+				fmt.Println("👎 Can't Organize Hub Elections")
 			}
 		} else {
 			var body *defaultprotomessages.NotConnectedMessageBody = nil
@@ -646,7 +653,7 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 				if marshalledBody, err := json.Marshal(*body); err != nil {
 					log.Println("Ошибка при маршалинге информации о свободных хабах для подключения:", err)
 				} else {
-					fmt.Printf("❤️‍🔥 Подключайся к этому хабу: %v\n", body)
+					fmt.Printf("❤️‍🔥 Подключайся к этому хабу: %s\n", body.ID)
 					msg = defaultprotomessages.Message{
 						Type: defaultprotomessages.NotConnectedMessageType,
 						Body: marshalledBody,

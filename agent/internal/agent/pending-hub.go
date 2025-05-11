@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
@@ -112,6 +113,8 @@ func (a *Agent) informPendingHubPeersToConnect() {
 			log.Println(err)
 			continue
 		}
+
+		fmt.Printf("❤️‍🔥 Информирование о новом хабе. Попробуй подключиться ко мне (%s)\n", pendingPeer.ID)
 
 		if err := json.NewEncoder(s).Encode(message); err != nil {
 			log.Println("Ошибка при отправке запроса:", err)

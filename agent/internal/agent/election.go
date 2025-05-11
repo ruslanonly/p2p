@@ -24,67 +24,70 @@ func (a *Agent) organizeSegmentHubElection() []peer.ID {
 
 	if len(abonents) < 1 {
 		return nil
-	} else {
-		var abonent AgentPeerInfo
-		for _, a := range abonents {
-			abonent = a
-			break
-		}
-
-		var message defaultprotomessages.Message
-		if len(abonents) == 1 {
-			// Абонент становится хабом сразу, если он единственный абонент в сегменте
-			log.Printf("Отправка сообщения о необходимости стать единственным хабом")
-			message = defaultprotomessages.Message{
-				Type: defaultprotomessages.BecomeOnlyOneHubMessageType,
-			}
-		} else {
-			// Первый абонент из списка абонентов должен являться инициатором выборов среди другого сегмента, о котором он знает
-			log.Printf("Отправка сообщения о необходимости инициализировать выборы среди абонентов сегмента")
-
-			_, abonents := a.getSplittedPeers()
-			abonentsPeerInfos := make([]defaultprotomessages.InfoAboutSegmentPeerInfo, 0)
-
-			for peerID, peerInfo := range abonents {
-				addrs := a.node.PeerAddrs(peerID)
-				peerIDs = append(peerIDs, peerID)
-
-				abonentsPeerInfos = append(abonentsPeerInfos, defaultprotomessages.InfoAboutSegmentPeerInfo{
-					ID:    peerID,
-					IsHub: peerInfo.status.IsHub(),
-					Addrs: addrs,
-				})
-			}
-
-			body := defaultprotomessages.InitializeElectionRequestMessageBody{
-				Peers: abonentsPeerInfos,
-			}
-
-			if marshaledBody, err := json.Marshal(body); err != nil {
-				log.Println("Ошибка при маршалинге тела InitializeElectionRequestMessageBody:", err)
-				return nil
-			} else {
-				message = defaultprotomessages.Message{
-					Type: defaultprotomessages.InitializeElectionRequestMessageType,
-					Body: marshaledBody,
-				}
-			}
-
-		}
-
-		s, err := a.node.Host.NewStream(context.Background(), abonent.ID, defaultproto.ProtocolID)
-		if err != nil {
-			log.Println(err)
-			return nil
-		}
-
-		if err := json.NewEncoder(s).Encode(message); err != nil {
-			log.Println("Ошибка при отправке запроса:", err)
-			return nil
-		}
-
-		s.Close()
 	}
+
+	var abonent AgentPeerInfo
+	for _, a := range abonents {
+		abonent = a
+		break
+	}
+
+	var message defaultprotomessages.Message
+	if len(abonents) == 1 {
+		// Абонент становится хабом сразу, если он единственный абонент в сегменте
+		log.Printf("Отправка сообщения о необходимости стать единственным хабом")
+		message = defaultprotomessages.Message{
+			Type: defaultprotomessages.BecomeOnlyOneHubMessageType,
+		}
+	} else {
+		// Первый абонент из списка абонентов должен являться инициатором выборов среди другого сегмента, о котором он знает
+		log.Printf("Отправка сообщения о необходимости инициализировать выборы среди абонентов сегмента")
+
+		abonentsPeerInfos := make([]defaultprotomessages.InfoAboutSegmentPeerInfo, 0)
+
+		for peerID, peerInfo := range abonents {
+			addrs := a.node.PeerAddrs(peerID)
+			peerIDs = append(peerIDs, peerID)
+
+			abonentsPeerInfos = append(abonentsPeerInfos, defaultprotomessages.InfoAboutSegmentPeerInfo{
+				ID:    peerID,
+				IsHub: peerInfo.status.IsHub(),
+				Addrs: addrs,
+			})
+		}
+
+		body := defaultprotomessages.InitializeElectionRequestMessageBody{
+			Peers: abonentsPeerInfos,
+		}
+
+		marshaledBody, err := json.Marshal(body)
+		if err != nil {
+			log.Println("Ошибка при маршалинге тела InitializeElectionRequestMessageBody:", err)
+			return nil
+		}
+
+		message = defaultprotomessages.Message{
+			Type: defaultprotomessages.InitializeElectionRequestMessageType,
+			Body: marshaledBody,
+		}
+	}
+
+	s, err := a.node.Host.NewStream(context.Background(), abonent.ID, defaultproto.ProtocolID)
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
+
+	fmt.Println("❇️ Отправление сообщения для организации выборов")
+
+	if err := json.NewEncoder(s).Encode(message); err != nil {
+		log.Println("Ошибка при отправке запроса:", err)
+		return nil
+	}
+
+	fmt.Println("❇️ Отправлено сообщение для организации выборов")
+
+	s.Close()
 
 	return peerIDs
 }
@@ -203,18 +206,28 @@ func (a *Agent) initializeElectionForMySegment(segmentPeers []AgentPeerInfoPeer)
 					continue
 				}
 
-				stream, err := a.node.Host.NewStream(context.Background(), p.ID, defaultproto.ProtocolID)
-				if err != nil {
-					log.Println(err)
-					return
+				var success bool
+				for attempt := 1; attempt <= 3; attempt++ {
+					stream, err := a.node.Host.NewStream(context.Background(), p.ID, defaultproto.ProtocolID)
+					if err != nil {
+						log.Printf("Попытка %d: не удалось создать поток к %s: %v", attempt, p.ID, err)
+						continue
+					}
+
+					_, err = stream.Write(append(marshalledMessage, '\n'))
+					stream.Close()
+
+					if err != nil {
+						log.Printf("Попытка %d: ошибка при отправке запроса к %s: %v", attempt, p.ID, err)
+					} else {
+						success = true
+						break
+					}
 				}
 
-				if _, err := stream.Write(append(marshalledMessage, '\n')); err != nil {
-					log.Println("Ошибка при отправке запроса:", err)
-					return
+				if !success {
+					log.Printf("Не удалось отправить сообщение к пиру %s после 3 попыток", p.ID)
 				}
-
-				stream.Close()
 			}
 		}
 	}

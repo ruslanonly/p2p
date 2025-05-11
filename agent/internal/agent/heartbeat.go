@@ -56,6 +56,12 @@ func (a *Agent) checkAllPeersHeartbeat() {
 
 	for _, peerInfo := range a.peers {
 		// log.Printf("❤️❤️❤️: %s\n", peerInfo.ID)
+		connections := a.node.Host.Network().ConnsToPeer(peerInfo.ID)
+		if len(connections) == 0 {
+			a.disconnectPeer(peerInfo.ID, false)
+			return
+		}
+
 		s, err := a.node.Host.NewStream(context.Background(), peerInfo.ID, heartbeatproto.ProtocolID)
 		if err != nil {
 			a.disconnectPeer(peerInfo.ID, false)
