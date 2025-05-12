@@ -15,7 +15,6 @@ const (
 	NotConnectedAndWaitMessageType       MessageType = "NotConnectedAndWaitMessageType"
 	InitializeElectionRequestMessageType MessageType = "InitializeElectionRequestMessageType"
 	BecomeOnlyOneHubMessageType          MessageType = "BecomeOnlyOneHubMessageType"
-	InfoAboutMeForHubsMessageType        MessageType = "InfoAboutMeForHubsMessageType"
 	InfoAboutSegmentMessageType          MessageType = "InfoAboutSegmentMessageType"
 	ElectionRequestMessageType           MessageType = "ElectionRequestMessageType"
 
@@ -31,23 +30,6 @@ type Message struct {
 type NotConnectedMessageBody struct {
 	ID    peer.ID  `json:"id"`
 	Addrs []string `json:"addrs"`
-}
-
-type HubSlotsStatus string
-
-const (
-	// Есть свободные слоты для подключения
-	FreeHubSlotsStatus HubSlotsStatus = "FreeHubSlotsStatus"
-	// Занят, но есть абоненты для инициализации выборов
-	FullHavingAbonentsHubSlotsStatus HubSlotsStatus = "FullHavingAbonentsHubSlotsStatus"
-	// Полностью занят
-	FullNotHavingAbonentsHubSlotsStatus HubSlotsStatus = "FullNotHavingAbonentsHubSlotsStatus"
-)
-
-type InfoAboutMeForHubsMessageBody struct {
-	ID     string         `json:"id"`
-	Addrs  []string       `json:"addrs"`
-	Status HubSlotsStatus `json:"status"`
 }
 
 type InfoAboutSegmentPeerInfo struct {

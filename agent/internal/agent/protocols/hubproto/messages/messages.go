@@ -4,19 +4,29 @@ import (
 	"net"
 
 	"github.com/libp2p/go-libp2p/core/peer"
+	statusmodel "github.com/ruslanonly/agent/internal/agent/model/status"
 )
 
 type MessageType string
 
 const (
-	RedTrafficMessageType MessageType = "RedTrafficMessageType"
+	RedTrafficMessageType   MessageType = "RedTrafficMessageType"
+	InfoAboutHubMessageType MessageType = "InfoAboutHubMessageType"
 )
+
+type MessageBody []byte
 
 type Message struct {
 	FromID  peer.ID     `json:"from_id"`
 	Type    MessageType `json:"type"`
-	Payload []byte      `json:"body"`
+	Body    MessageBody `json:"body"`
 	Visited []peer.ID   `json:"visited"`
 }
 
 type RedTrafficMessageBody net.IP
+
+type InfoAboutHubMessageBody struct {
+	ID     string                     `json:"id"`
+	Addrs  []string                   `json:"addrs"`
+	Status statusmodel.HubSlotsStatus `json:"status"`
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/raft"
 	raftnet "github.com/libp2p/go-libp2p-raft"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/ruslanonly/agent/internal/agent/model"
 	"github.com/ruslanonly/agent/internal/agent/protocols/defaultproto"
 	defaultprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/defaultproto/messages"
 	"github.com/ruslanonly/agent/internal/consensus/hubelection"
@@ -19,14 +20,15 @@ import (
 
 func (a *Agent) organizeSegmentHubElection() []peer.ID {
 	_, abonents := a.getSplittedPeers()
+	log.Printf("❇️ Список абонентов: %+v\n", abonents)
 
-	peerIDs := make([]peer.ID, 0)
-
-	if len(abonents) < 1 {
+	if len(abonents) == 0 {
 		return nil
 	}
 
-	var abonent AgentPeerInfo
+	peerIDs := make([]peer.ID, 0)
+
+	var abonent model.AgentPeerInfo
 	for _, a := range abonents {
 		abonent = a
 		break
@@ -51,7 +53,7 @@ func (a *Agent) organizeSegmentHubElection() []peer.ID {
 
 			abonentsPeerInfos = append(abonentsPeerInfos, defaultprotomessages.InfoAboutSegmentPeerInfo{
 				ID:    peerID,
-				IsHub: peerInfo.status.IsHub(),
+				IsHub: peerInfo.Status.IsHub(),
 				Addrs: addrs,
 			})
 		}
@@ -92,7 +94,7 @@ func (a *Agent) organizeSegmentHubElection() []peer.ID {
 	return peerIDs
 }
 
-func (a *Agent) prepareForElection(segmentPeers []AgentPeerInfoPeer) {
+func (a *Agent) prepareForElection(segmentPeers []model.AgentPeerInfoPeer) {
 	config := raft.DefaultConfig()
 	config.LocalID = raft.ServerID(a.node.Host.ID().String())
 	config.Logger = hclog.New(&hclog.LoggerOptions{
@@ -172,7 +174,7 @@ func (a *Agent) prepareForElection(segmentPeers []AgentPeerInfoPeer) {
 	}
 }
 
-func (a *Agent) initializeElectionForMySegment(segmentPeers []AgentPeerInfoPeer) {
+func (a *Agent) initializeElectionForMySegment(segmentPeers []model.AgentPeerInfoPeer) {
 	segmentPeerInfos := make([]defaultprotomessages.InfoAboutSegmentPeerInfo, 0)
 
 	for _, peerInfo := range segmentPeers {
@@ -180,7 +182,7 @@ func (a *Agent) initializeElectionForMySegment(segmentPeers []AgentPeerInfoPeer)
 
 		segmentPeerInfos = append(segmentPeerInfos, defaultprotomessages.InfoAboutSegmentPeerInfo{
 			ID:    peerInfo.ID,
-			IsHub: peerInfo.status.IsHub(),
+			IsHub: peerInfo.Status.IsHub(),
 			Addrs: addrs,
 		})
 	}

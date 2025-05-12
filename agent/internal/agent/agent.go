@@ -19,24 +19,13 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/ruslanonly/agent/config"
 	"github.com/ruslanonly/agent/internal/agent/model"
+	statusmodel "github.com/ruslanonly/agent/internal/agent/model/status"
 	"github.com/ruslanonly/agent/internal/agent/protocols/defaultproto"
 	defaultprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/defaultproto/messages"
 	"github.com/ruslanonly/agent/internal/agent/protocols/pendinghubproto"
 	"github.com/ruslanonly/agent/internal/fsm"
 	"github.com/ruslanonly/agent/internal/network"
 )
-
-type AgentPeerInfoPeer struct {
-	ID     peer.ID
-	Addrs  []string
-	status model.PeerP2PStatus
-}
-
-type AgentPeerInfo struct {
-	ID     peer.ID
-	status model.PeerP2PStatus
-	Peers  map[peer.ID]AgentPeerInfoPeer
-}
 
 type Agent struct {
 	node       *network.LibP2PNode
@@ -45,8 +34,10 @@ type Agent struct {
 	threatsIPC *threats.ThreatsIPCClient
 
 	// Подключенные абоненты и хабы
-	peers      map[peer.ID]AgentPeerInfo
+	peers      map[peer.ID]model.AgentPeerInfo
 	peersMutex sync.RWMutex
+
+	handlingMessageMutex sync.RWMutex
 
 	// Максимальное количество подключенных абонентов и хабов
 	peersLimit int
@@ -75,7 +66,7 @@ func NewAgent(ctx context.Context, peersLimit, port int) (*Agent, error) {
 
 		ctx: ctx,
 
-		peers:      make(map[peer.ID]AgentPeerInfo),
+		peers:      make(map[peer.ID]model.AgentPeerInfo),
 		peersLimit: peersLimit,
 		peersMutex: sync.RWMutex{},
 	}
@@ -83,12 +74,12 @@ func NewAgent(ctx context.Context, peersLimit, port int) (*Agent, error) {
 	return agent, nil
 }
 
-func (a *Agent) getSplittedPeers() (map[peer.ID]AgentPeerInfo, map[peer.ID]AgentPeerInfo) {
-	hubs := make(map[peer.ID]AgentPeerInfo)
-	abonents := make(map[peer.ID]AgentPeerInfo)
+func (a *Agent) getSplittedPeers() (map[peer.ID]model.AgentPeerInfo, map[peer.ID]model.AgentPeerInfo) {
+	hubs := make(map[peer.ID]model.AgentPeerInfo)
+	abonents := make(map[peer.ID]model.AgentPeerInfo)
 
 	for peerID, peerInfo := range a.peers {
-		if peerInfo.status.IsAbonent() {
+		if peerInfo.Status.IsAbonent() {
 			abonents[peerID] = peerInfo
 		} else {
 			hubs[peerID] = peerInfo
@@ -99,9 +90,9 @@ func (a *Agent) getSplittedPeers() (map[peer.ID]AgentPeerInfo, map[peer.ID]Agent
 }
 
 // [ABONENT]
-func (a *Agent) getMyHub() (*AgentPeerInfo, bool) {
+func (a *Agent) getMyHub() (*model.AgentPeerInfo, bool) {
 	for _, peerInfo := range a.peers {
-		if peerInfo.status.IsHub() {
+		if peerInfo.Status.IsHub() {
 			return &peerInfo, true
 		}
 	}
@@ -110,16 +101,16 @@ func (a *Agent) getMyHub() (*AgentPeerInfo, bool) {
 }
 
 // [ABONENT]
-func (a *Agent) getSegmentPeers() map[peer.ID]AgentPeerInfoPeer {
+func (a *Agent) getSegmentPeers() map[peer.ID]model.AgentPeerInfoPeer {
 	a.peersMutex.Lock()
 	defer a.peersMutex.Unlock()
 
 	myHub, myHubIsFound := a.getMyHub()
-	segmentPeers := make(map[peer.ID]AgentPeerInfoPeer)
+	segmentPeers := make(map[peer.ID]model.AgentPeerInfoPeer)
 
 	if myHubIsFound {
 		for peerID, peerInfo := range a.peers[myHub.ID].Peers {
-			if !peerInfo.status.IsHub() {
+			if !peerInfo.Status.IsHub() {
 				segmentPeers[peerID] = peerInfo
 			}
 		}
@@ -134,18 +125,18 @@ func (a *Agent) isPeersLimitExceeded() bool {
 	return out
 }
 
-func (a *Agent) getHubSlotsStatus() defaultprotomessages.HubSlotsStatus {
+func (a *Agent) getHubSlotsStatus() statusmodel.HubSlotsStatus {
 	_, abonents := a.getSplittedPeers()
 
 	hasAbonents := len(abonents) != 0
-	var status defaultprotomessages.HubSlotsStatus
+	var status statusmodel.HubSlotsStatus
 
 	if !a.isPeersLimitExceeded() {
-		status = defaultprotomessages.FreeHubSlotsStatus
+		status = statusmodel.FreeHubSlotsStatus
 	} else if hasAbonents {
-		status = defaultprotomessages.FullHavingAbonentsHubSlotsStatus
+		status = statusmodel.FullHavingAbonentsHubSlotsStatus
 	} else {
-		status = defaultprotomessages.FullNotHavingAbonentsHubSlotsStatus
+		status = statusmodel.FullNotHavingAbonentsHubSlotsStatus
 	}
 
 	return status
@@ -195,23 +186,11 @@ func (a *Agent) disconnectAllPeers() {
 	}
 }
 
-func (a *Agent) isHub() (bool, error) {
-	isHubRaw, found := a.fsm.FSM.Metadata("isHub")
-	if found {
-		isHub, asserted := isHubRaw.(bool)
-		if asserted {
-			return isHub, nil
-		} else {
-			a.fsm.FSM.DeleteMetadata("isHub")
-			return false, fmt.Errorf("ошибка при определении статуса")
-		}
-	}
-
-	return false, fmt.Errorf("ошибка при определении статуса")
-}
-
 func (a *Agent) Start(options *StartOptions) {
 	a.node.PrintHostInfo()
+
+	a.startStream()
+	a.startHeartbeatStream()
 
 	a.fsm = fsm.NewAgentFSM(
 		a.ctx,
@@ -235,7 +214,7 @@ func (a *Agent) Start(options *StartOptions) {
 				a.bootstrap(bootstrapAddr, bootstrapPeerID)
 			},
 			fsm.EnterStateFSMCallbackName(fsm.ListeningMessagesAsHubAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
-				e.FSM.SetMetadata("isHub", true)
+				a.fsm.IAmHub()
 
 				if e.Src == fsm.IdleAgentFSMState ||
 					e.Src == fsm.ElectingNewHubAgentFSMState ||
@@ -258,7 +237,7 @@ func (a *Agent) Start(options *StartOptions) {
 					ticker := time.NewTicker(config.BroadcastingInterval)
 					defer ticker.Stop()
 
-					a.broadcastToHubsInfoAboutMe()
+					a.InfoAboutMeHubMessage()
 					a.broadcastToSegmentInfoAboutSegment()
 
 					for {
@@ -267,7 +246,7 @@ func (a *Agent) Start(options *StartOptions) {
 							log.Println("🛑 Цикл оповещения остановлен (отменён через cancel)")
 							return
 						case <-ticker.C:
-							a.broadcastToHubsInfoAboutMe()
+							a.InfoAboutMeHubMessage()
 							a.broadcastToSegmentInfoAboutSegment()
 						}
 					}
@@ -277,7 +256,7 @@ func (a *Agent) Start(options *StartOptions) {
 
 			},
 			fsm.EnterStateFSMCallbackName(fsm.ListeningMessagesAsAbonentAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
-				e.FSM.SetMetadata("isHub", false)
+				a.fsm.IAmAbonent()
 
 				if e.Src == fsm.ConnectingToHubAgentFSMState {
 					a.startThreatsStream()
@@ -291,22 +270,22 @@ func (a *Agent) Start(options *StartOptions) {
 			},
 			fsm.EnterStateFSMCallbackName(fsm.OrganizingSegmentHubElectionAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
 				peerIDs := a.organizeSegmentHubElection()
-				fmt.Printf("❇️ ОРГАНИЗОВАНЫ ВЫБОРЫ ДЛЯ %v %v\n", peerIDs, a.peers)
+				fmt.Printf("❇️ ОРГАНИЗОВАНЫ ВЫБОРЫ ДЛЯ %v\n", peerIDs)
 
 				if len(peerIDs) == 0 {
 					e.FSM.Event(e_, fsm.OrganizingSegmentHubElectionIsCompletedAgentFSMEvent)
 					return
 				}
 
-				a.fsm.FSM.SetMetadata("organizedElectionPeerIDs", peerIDs)
+				a.fsm.SetElectionPeers(peerIDs)
 			},
 			fsm.LeaveStateFSMCallbackName(fsm.OrganizingSegmentHubElectionAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
-				a.fsm.FSM.DeleteMetadata("organizedElectionPeerIDs")
+				a.fsm.DeleteElectionPeers()
 				fmt.Println("❇️ ВЫБОРЫ ЗАВЕРШИЛИСЬ")
 
 			},
 			fsm.EnterStateFSMCallbackName(fsm.ElectingNewHubAgentFSMState): func(e_ context.Context, e *looplabFSM.Event) {
-				segmentPeers, ok := e.Args[0].([]AgentPeerInfoPeer)
+				segmentPeers, ok := e.Args[0].([]model.AgentPeerInfoPeer)
 
 				if !ok {
 					log.Println("Первый аргумент peers должен иметь тип данных []AgentPeerInfoPeer")
@@ -355,9 +334,6 @@ func (a *Agent) Start(options *StartOptions) {
 		// Узел начинает свою работу как хаб
 		a.fsm.Event(fsm.BecomeHubAgentFSMEvent)
 	}
-
-	a.startStream()
-	a.startHeartbeatStream()
 
 	go a.threatsIPC.Listen(a.RedTrafficIPCHandler, a.YellowTrafficIPCHandler)
 	go func(ctx context.Context) {
@@ -453,10 +429,10 @@ func (a *Agent) bootstrap(addr, peerID string) {
 					return
 				}
 
-				a.peers[hubAddrInfo.ID] = AgentPeerInfo{
+				a.peers[hubAddrInfo.ID] = model.AgentPeerInfo{
 					ID:     hubAddrInfo.ID,
-					status: model.HubFreeP2PStatus, // TODO: Необходимо указывать, что это просто хаб
-					Peers:  make(map[peer.ID]AgentPeerInfoPeer, 0),
+					Status: statusmodel.HubFreeP2PStatus, // TODO: Необходимо указывать, что это просто хаб
+					Peers:  make(map[peer.ID]model.AgentPeerInfoPeer, 0),
 				}
 
 				a.handleInfoAboutSegment(hubAddrInfo.ID, body.Peers)
@@ -500,21 +476,24 @@ func (a *Agent) startStream() {
 }
 
 func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
-	buf := bufio.NewReader(stream)
-	raw, err := buf.ReadString('\n')
+	defer stream.Close()
 
-	if err != nil {
-		log.Println(buf)
-		log.Fatalf("Ошибка при обработке потока сообщений: %v", err)
-	}
+	a.handlingMessageMutex.Lock()
+	defer a.handlingMessageMutex.Unlock()
 
-	log.Printf("Получено сообщение: %s", raw)
-
+	decoder := json.NewDecoder(stream)
 	var msg defaultprotomessages.Message
-	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
-		log.Printf("Ошибка при парсинге сообщения: %v", err)
-		return
+
+	if err := decoder.Decode(&msg); err != nil {
+		log.Fatalf(
+			"Ошибка при обработке потока сообщений от (%s %s): %v",
+			stream.Conn().RemotePeer(),
+			stream.Conn().RemoteMultiaddr(),
+			err,
+		)
 	}
+
+	log.Printf("Получено сообщение: %s %s", msg.Type, string(msg.Body))
 
 	if msg.Type == defaultprotomessages.ConnectRequestMessageType {
 		a.handleConnectionRequestMessage(stream)
@@ -529,12 +508,12 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 
 		a.handleInfoAboutSegment(stream.Conn().RemotePeer(), body.Peers)
 
-		segmentPeersArr := make([]AgentPeerInfoPeer, 0)
+		segmentPeersArr := make([]model.AgentPeerInfoPeer, 0)
 		for _, p := range body.Peers {
-			agentPeerInfoPeer := AgentPeerInfoPeer{
+			agentPeerInfoPeer := model.AgentPeerInfoPeer{
 				ID:     p.ID,
 				Addrs:  p.Addrs,
-				status: model.AbonentP2PStatus,
+				Status: statusmodel.AbonentP2PStatus,
 			}
 			segmentPeersArr = append(segmentPeersArr, agentPeerInfoPeer)
 		}
@@ -563,7 +542,7 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 
 		// TODO: COPY PASTE FROM msg.Type == defaultprotomessages.InfoAboutSegmentMessageType
 		segmentPeersMap := a.getSegmentPeers()
-		segmentPeersArr := make([]AgentPeerInfoPeer, 0)
+		segmentPeersArr := make([]model.AgentPeerInfoPeer, 0)
 		for _, p := range segmentPeersMap {
 			segmentPeersArr = append(segmentPeersArr, p)
 		}
@@ -572,14 +551,6 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 		if err != nil {
 			log.Printf("Ошибка при FSM переходе: %v", err)
 		}
-	} else if msg.Type == defaultprotomessages.InfoAboutMeForHubsMessageType {
-		var infoAboutHub defaultprotomessages.InfoAboutMeForHubsMessageBody
-		if err := json.Unmarshal([]byte(msg.Body), &infoAboutHub); err != nil {
-			log.Println("Ошибка при парсинге ответа:", err)
-			return
-		}
-
-		a.handleInfoAboutHub(infoAboutHub)
 	} else if msg.Type == defaultprotomessages.DisconnectMessageType {
 		a.disconnectPeer(stream.Conn().RemotePeer(), false)
 	}
@@ -589,15 +560,16 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 	a.peersMutex.Lock()
 	defer a.peersMutex.Unlock()
+
 	slotsStatus := a.getHubSlotsStatus()
 
-	log.Printf("🔱 Мой статус: %s", slotsStatus)
-	if slotsStatus == defaultprotomessages.FreeHubSlotsStatus {
+	log.Printf("🔱 Мой статус: %s", slotsStatus, a.peers)
+	if slotsStatus == statusmodel.FreeHubSlotsStatus {
 		a.handleConnectedOnConnectionRequest(stream)
 	} else {
 		var msg defaultprotomessages.Message
 
-		if slotsStatus == defaultprotomessages.FullHavingAbonentsHubSlotsStatus {
+		if slotsStatus == statusmodel.FullHavingAbonentsHubSlotsStatus {
 			msg = defaultprotomessages.Message{
 				Type: defaultprotomessages.NotConnectedAndWaitMessageType,
 			}
@@ -607,9 +579,9 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 				Addrs: []multiaddr.Multiaddr{stream.Conn().RemoteMultiaddr()},
 			}
 
-			a.addPendingHubPeer(addrInfo)
+			a.fsm.AddPendingHubPeer(addrInfo)
 			if a.fsm.FSM.Can(fsm.OrganizeSegmentHubElectionAgentFSMEvent) {
-				fmt.Println("👍 Can Organize Hub Elections", a.peers)
+				fmt.Println("👍 Can Organize Hub Elections")
 				a.fsm.Event(fsm.OrganizeSegmentHubElectionAgentFSMEvent)
 			} else {
 				fmt.Println("👎 Can't Organize Hub Elections")
@@ -618,11 +590,13 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 			var body *defaultprotomessages.NotConnectedMessageBody = nil
 			foundFreeHub := false
 
+			knownHubs := a.fsm.GetKnownHubs()
+
 			hubs, _ := a.getSplittedPeers()
 			for _, hub := range hubs {
 				addrs := a.node.PeerAddrs(hub.ID)
 
-				if hub.status == model.HubFreeP2PStatus {
+				if hub.Status == statusmodel.HubFreeP2PStatus {
 					body = &defaultprotomessages.NotConnectedMessageBody{
 						ID:    hub.ID,
 						Addrs: addrs,
@@ -633,14 +607,43 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 			}
 
 			if !foundFreeHub {
+				for _, hub := range knownHubs {
+					if hub.Status == statusmodel.HubFreeP2PStatus {
+						body = &defaultprotomessages.NotConnectedMessageBody{
+							ID:    hub.ID,
+							Addrs: hub.Addrs,
+						}
+						foundFreeHub = true
+						break
+					}
+				}
+			}
+
+			if !foundFreeHub {
+				foundFullHub := false
+
 				for _, hub := range hubs {
 					addrs := a.node.PeerAddrs(hub.ID)
-					if hub.status == model.HubFullHavingAbonentsP2PStatus {
+					if hub.Status == statusmodel.HubFullHavingAbonentsP2PStatus {
 						body = &defaultprotomessages.NotConnectedMessageBody{
 							ID:    hub.ID,
 							Addrs: addrs,
 						}
+
+						foundFullHub = true
 						break
+					}
+				}
+
+				if !foundFullHub {
+					for _, hub := range knownHubs {
+						if hub.Status == statusmodel.HubFullHavingAbonentsP2PStatus {
+							body = &defaultprotomessages.NotConnectedMessageBody{
+								ID:    hub.ID,
+								Addrs: hub.Addrs,
+							}
+							break
+						}
 					}
 				}
 			}
@@ -666,8 +669,6 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 			log.Printf("Ошибка при отправке сообщения об успешном подключении узла %s: %v\n", stream.Conn().RemotePeer(), err)
 			return
 		}
-
-		stream.Close()
 	}
 }
 
@@ -683,7 +684,7 @@ func (a *Agent) handleConnectedOnConnectionRequest(stream libp2pNetwork.Stream) 
 
 		abonentsPeerInfos = append(abonentsPeerInfos, defaultprotomessages.InfoAboutSegmentPeerInfo{
 			ID:    peerID,
-			IsHub: peerInfo.status.IsHub(),
+			IsHub: peerInfo.Status.IsHub(),
 			Addrs: addrs,
 		})
 	}
@@ -709,99 +710,10 @@ func (a *Agent) handleConnectedOnConnectionRequest(stream libp2pNetwork.Stream) 
 
 	log.Printf("Подключен новый узел %s\n", remotePeerID)
 
-	a.peers[remotePeerID] = AgentPeerInfo{
+	a.peers[remotePeerID] = model.AgentPeerInfo{
 		ID:     remotePeerID,
-		status: model.AbonentP2PStatus,
+		Status: statusmodel.AbonentP2PStatus,
 		Peers:  nil,
-	}
-}
-
-// [HUB] Отправление информации о себе хабам
-func (a *Agent) broadcastToHubsInfoAboutMe() {
-	a.peersMutex.RLock()
-	defer a.peersMutex.RUnlock()
-
-	status := a.getHubSlotsStatus()
-
-	hubs, _ := a.getSplittedPeers()
-	hubsPeerIDs := make([]peer.ID, 0)
-
-	for peerID := range hubs {
-		hubsPeerIDs = append(hubsPeerIDs, peerID)
-	}
-
-	if len(hubsPeerIDs) == 0 {
-		return
-	}
-
-	infoAboutMe := defaultprotomessages.InfoAboutMeForHubsMessageBody{
-		ID:     a.node.Host.ID().String(),
-		Addrs:  network.MultiaddrsToMultiaddrStrs(a.node.Host.Addrs()),
-		Status: status,
-	}
-
-	if marshaledBody, err := json.Marshal(infoAboutMe); err != nil {
-		log.Println("Ошибка при маршалинге тела информации о себе:", err)
-		return
-	} else {
-
-		infoAboutMeMessage := defaultprotomessages.Message{
-			Type: defaultprotomessages.InfoAboutMeForHubsMessageType,
-			Body: marshaledBody,
-		}
-
-		if marshaledMessage, err := json.Marshal(infoAboutMeMessage); err != nil {
-			log.Println("Ошибка при маршалинге информации о себе:", err)
-			return
-		} else {
-			log.Printf("Отправка broadcast-сообщение о себе")
-			a.node.BroadcastToPeers(defaultproto.ProtocolID, hubsPeerIDs, marshaledMessage)
-		}
-	}
-}
-
-// [ABONENT]
-func (a *Agent) handleInfoAboutHub(info defaultprotomessages.InfoAboutMeForHubsMessageBody) {
-	a.peersMutex.Lock()
-	defer a.peersMutex.Unlock()
-
-	peerID, err := peer.Decode(info.ID)
-	if err != nil {
-		log.Println("❌ Не удалось декодировать info.ID в peer.ID:", info.ID, err)
-		return
-	}
-
-	p, found := a.peers[peerID]
-	if !found {
-		return
-	}
-
-	a.informPendingHubPeersToConnect()
-
-	if p.status.IsAbonent() {
-		switch info.Status {
-		case defaultprotomessages.FreeHubSlotsStatus:
-			p.status = model.HubFreeP2PStatus
-		case defaultprotomessages.FullHavingAbonentsHubSlotsStatus:
-			p.status = model.HubFullHavingAbonentsP2PStatus
-		case defaultprotomessages.FullNotHavingAbonentsHubSlotsStatus:
-			p.status = model.HubFullP2PStatus
-		}
-
-		a.peers[peerID] = p
-		log.Printf("☝️ Пир %s стал хабом", peerID)
-
-		peerIDsRaw, foundPeerIDs := a.fsm.FSM.Metadata("organizedElectionPeerIDs")
-		if foundPeerIDs {
-			peerIDs, ok := peerIDsRaw.([]peer.ID)
-			if !ok {
-				return
-			}
-
-			if slices.Contains(peerIDs, peerID) {
-				a.fsm.Event(fsm.OrganizingSegmentHubElectionIsCompletedAgentFSMEvent)
-			}
-		}
 	}
 }
 
@@ -820,7 +732,7 @@ func (a *Agent) broadcastToSegmentInfoAboutSegment() {
 
 		abonentsPeerInfos = append(abonentsPeerInfos, defaultprotomessages.InfoAboutSegmentPeerInfo{
 			ID:    peerID,
-			IsHub: peerInfo.status.IsHub(),
+			IsHub: peerInfo.Status.IsHub(),
 			Addrs: addrs,
 		})
 	}
@@ -844,7 +756,7 @@ func (a *Agent) broadcastToSegmentInfoAboutSegment() {
 		}
 
 		if marshaledMessage, err := json.Marshal(infoAboutSegmentMessage); err != nil {
-			log.Println("Ошибка при маршалинге информации о себе:", err)
+			log.Println("Ошибка при маршалинге информации о сегменте:", err)
 			return
 		} else {
 			log.Printf("Отправка broadcast-сообщение о сегменте %v", abonentsPeerIDs)
@@ -871,20 +783,20 @@ func (a *Agent) handleInfoAboutSegment(hubID peer.ID, peers []defaultprotomessag
 			continue
 		}
 
-		var status model.PeerP2PStatus
+		var status statusmodel.PeerP2PStatus
 		if p.IsHub {
-			status = model.HubFreeP2PStatus
+			status = statusmodel.HubFreeP2PStatus
 		} else {
-			status = model.AbonentP2PStatus
+			status = statusmodel.AbonentP2PStatus
 		}
 
 		connectedness := a.node.Host.Network().Connectedness(p.ID)
 
 		if connectedness == libp2pNetwork.Connected || p.ID == a.node.Host.ID() {
-			a.peers[hubID].Peers[p.ID] = AgentPeerInfoPeer{
+			a.peers[hubID].Peers[p.ID] = model.AgentPeerInfoPeer{
 				ID:     p.ID,
 				Addrs:  p.Addrs,
-				status: status,
+				Status: status,
 			}
 		} else {
 			info := peer.AddrInfo{
@@ -895,10 +807,10 @@ func (a *Agent) handleInfoAboutSegment(hubID peer.ID, peers []defaultprotomessag
 			if err := a.node.Connect(info); err != nil {
 				log.Printf("Возникла ошибка при подключении пира %s: %v", p.ID, err)
 			} else {
-				a.peers[hubID].Peers[p.ID] = AgentPeerInfoPeer{
+				a.peers[hubID].Peers[p.ID] = model.AgentPeerInfoPeer{
 					ID:     p.ID,
 					Addrs:  p.Addrs,
-					status: status,
+					Status: status,
 				}
 			}
 		}

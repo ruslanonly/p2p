@@ -8,7 +8,6 @@ import (
 	"log"
 
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/ruslanonly/agent/internal/agent/protocols/pendinghubproto"
 	pendinghubprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/pendinghubproto/messages"
 	"github.com/ruslanonly/agent/internal/fsm"
@@ -51,45 +50,9 @@ func (a *Agent) pendingHubStreamHandler(stream libp2pNetwork.Stream) {
 	}
 }
 
-func (a *Agent) getPendingHubPeers() []peer.AddrInfo {
-	setRaw, found := a.fsm.FSM.Metadata("pendingHubPeers")
-	if !found {
-		return nil
-	}
-
-	pendingHubPeers := setRaw.(map[peer.ID]peer.AddrInfo)
-	peers := make([]peer.AddrInfo, 0, len(pendingHubPeers))
-	for _, addr := range pendingHubPeers {
-		peers = append(peers, addr)
-	}
-	return peers
-}
-
-func (a *Agent) addPendingHubPeer(addrInfo peer.AddrInfo) {
-	setRaw, found := a.fsm.FSM.Metadata("pendingHubPeers")
-	var pendingHubPeers map[peer.ID]peer.AddrInfo
-
-	if !found {
-		pendingHubPeers = make(map[peer.ID]peer.AddrInfo)
-		a.fsm.FSM.SetMetadata("pendingHubPeers", pendingHubPeers)
-	} else {
-		pendingHubPeers = setRaw.(map[peer.ID]peer.AddrInfo)
-	}
-
-	pendingHubPeers[addrInfo.ID] = addrInfo
-}
-
-func (a *Agent) removePendingHubPeer(peerID peer.ID) {
-	setRaw, found := a.fsm.FSM.Metadata("pendingHubPeers")
-	if found {
-		pendingHubPeers := setRaw.(map[peer.ID]peer.AddrInfo)
-		delete(pendingHubPeers, peerID)
-	}
-}
-
 // [HUB]
 func (a *Agent) informPendingHubPeersToConnect() {
-	pendingPeers := a.getPendingHubPeers()
+	pendingPeers := a.fsm.GetPendingHubPeers()
 
 	if len(pendingPeers) == 0 {
 		return
@@ -121,7 +84,7 @@ func (a *Agent) informPendingHubPeersToConnect() {
 			continue
 		}
 
-		a.removePendingHubPeer(pendingPeer.ID)
+		a.fsm.RemovePendingHubPeer(pendingPeer.ID)
 
 		s.Close()
 	}

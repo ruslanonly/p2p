@@ -8,6 +8,7 @@ import (
 	"net"
 
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/ruslanonly/agent/internal/agent/protocols/threatsproto"
 	threatsprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/threatsproto/messages"
 )
@@ -47,6 +48,7 @@ func (a *Agent) threatsStreamHandler(stream libp2pNetwork.Stream) {
 	stream.Close()
 }
 
+// [ABONENT]
 func (a *Agent) informMyHubAboutRedTraffic(ip net.IP) {
 	myHub, found := a.getMyHub()
 	if !found {
@@ -70,4 +72,26 @@ func (a *Agent) informMyHubAboutRedTraffic(ip net.IP) {
 	}
 
 	s.Close()
+}
+
+// [HUB]
+func (a *Agent) broadcastBlockTrafficToAbonents(offenderIP net.IP) {
+	message := threatsprotomessages.Message{
+		IP:   offenderIP,
+		Type: threatsprotomessages.BlockTrafficMessageType,
+	}
+
+	log.Printf("🟪 Отправка информации о красном трафике своим абонентам %s", offenderIP)
+
+	_, abonents := a.getSplittedPeers()
+	peerIDs := make([]peer.ID, 0)
+	for _, abonent := range abonents {
+		peerIDs = append(peerIDs, abonent.ID)
+	}
+
+	if marshalledMessage, err := json.Marshal(message); err != nil {
+		log.Println("Ошибка при маршалинге информации о блокировке красного трафика:", err)
+	} else {
+		a.node.BroadcastToPeers(threatsproto.ProtocolID, peerIDs, marshalledMessage)
+	}
 }
