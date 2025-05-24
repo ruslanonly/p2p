@@ -20,37 +20,45 @@ func NewClassifier() *Classifier {
 }
 
 func (c *Classifier) Classify(vector []float32) model.TrafficClass {
-	inputShape := onnx.Shape{1, 41}
+	inputShape := onnx.Shape{1, 78}
 	inputTensor, err := onnx.NewTensor(inputShape, vector)
 	if err != nil {
 		log.Fatalf("failed to create input tensor: %v", err)
 	}
 
-	outputShape := onnx.Shape{1, 2}
-	outputTensor, err := onnx.NewEmptyTensor[float32](outputShape)
+	// ⚠️ output tensor нужного типа
+	outputTensor, err := onnx.NewEmptyTensor[float32](onnx.Shape{1, 2})
 	if err != nil {
 		log.Fatalf("failed to create output tensor: %v", err)
 	}
 
-	inputNames := []string{"input"}
-	outputNames := []string{"probabilities"}
+	inputNames := []string{"float_input"}
+	outputNames := []string{"output_label"}
 
-	session, err := onnx.NewSession("model.onnx", inputNames, outputNames, []*onnx.Tensor[float32]{inputTensor}, []*onnx.Tensor[float32]{outputTensor})
+	session, err := onnx.NewSession(
+		"model.onnx",
+		inputNames,
+		outputNames,
+		[]*onnx.Tensor[float32]{inputTensor},
+		[]*onnx.Tensor[float32]{outputTensor},
+	)
 	if err != nil {
 		log.Fatalf("failed to create session: %v", err)
 	}
 	defer session.Destroy()
 
-	err = session.Run()
-	if err != nil {
+	if err := session.Run(); err != nil {
 		log.Fatalf("failed to run inference: %v", err)
 	}
 
-	probs := outputTensor.GetData()
+	result := outputTensor.GetData()
 
-	if probs[1] > probs[0] {
-		return model.RedTrafficClass
+	if len(result) == 0 {
+		log.Fatalf("no output from model")
 	}
 
+	if result[0] == 1 {
+		return model.RedTrafficClass
+	}
 	return model.GreenTrafficClass
 }

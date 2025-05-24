@@ -2,7 +2,10 @@ package sniffer
 
 import (
 	"fmt"
+	"threats/internal/classifier/model"
+	"time"
 
+	"github.com/CN-TU/go-flows/flows"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
 )
@@ -24,12 +27,50 @@ func NewSniffer(iface string) (*Sniffer, error) {
 	return &Sniffer{handle: handle}, nil
 }
 
-func (s *Sniffer) Run(handler func(gopacket.Packet)) {
+func (s *Sniffer) Run(handler func(*model.TrafficParameters)) {
 	defer s.handle.Close()
 
 	packetSource := gopacket.NewPacketSource(s.handle, s.handle.LinkType())
 
-	for packet := range packetSource.Packets() {
-		handler(packet)
+	options := flows.FlowOptions{
+		ActiveTimeout: 5 * flows.SecondsInNanoseconds,
+		IdleTimeout:   5 * flows.SecondsInNanoseconds,
+		TCPExpiry:     true,
+		PerPacket:     false,
 	}
+
+	fiveTuple := true
+	records := flows.RecordListMaker{}
+
+	id := uint8(0)
+	flowTable := flows.NewFlowTable(
+		records,
+		func(e flows.Event, t *flows.FlowTable, k string, a bool, ctx *flows.EventContext, id uint64) flows.Flow {
+			return NewCICIDSFlow(e, t, k, a, ctx, id, handler)
+		},
+		options,
+		fiveTuple,
+		id,
+	)
+
+	i := uint64(0)
+	for packet := range packetSource.Packets() {
+		length := packet.Metadata().Length
+		key := GenerateKey(packet)
+		lowToHigh := DetermineDirection(packet)
+
+		event := &PacketEvent{
+			timestamp: flows.DateTimeNanoseconds(time.Now().UnixNano()),
+			key:       key,
+			lowToHigh: lowToHigh,
+			eventNr:   i,
+			length:    length,
+			Packet:    packet,
+		}
+
+		flowTable.Event(event)
+		i++
+	}
+
+	fmt.Println("END OF SNIFFING")
 }

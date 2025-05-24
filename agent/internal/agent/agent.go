@@ -101,6 +101,19 @@ func (a *Agent) getMyHub() (*model.AgentPeerInfo, bool) {
 }
 
 // [ABONENT]
+func (a *Agent) getPeerPeers(targetPeerID peer.ID) map[peer.ID]model.AgentPeerInfoPeer {
+	segmentPeers := make(map[peer.ID]model.AgentPeerInfoPeer)
+
+	for peerID, peerInfo := range a.peers[targetPeerID].Peers {
+		if !peerInfo.Status.IsHub() {
+			segmentPeers[peerID] = peerInfo
+		}
+	}
+
+	return segmentPeers
+}
+
+// [ABONENT]
 func (a *Agent) getSegmentPeers() map[peer.ID]model.AgentPeerInfoPeer {
 	a.peersMutex.Lock()
 	defer a.peersMutex.Unlock()

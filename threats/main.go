@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"pkg/firewall"
@@ -9,8 +10,6 @@ import (
 	"threats/internal/classifier"
 	classifierModel "threats/internal/classifier/model"
 	"threats/internal/sniffer"
-
-	"github.com/google/gopacket"
 )
 
 func main() {
@@ -41,16 +40,11 @@ func main() {
 
 	cls := classifier.NewClassifier()
 
-	go snf.Run(func(packet gopacket.Packet) {
-		parameters, err1 := aggregator.Extract(packet)
-
-		if err1 != nil {
-			return
-		}
-
+	go snf.Run(func(parameters *classifierModel.TrafficParameters) {
 		vector := aggregator.Vectorize(*parameters)
 		trafficClass := cls.Classify(vector)
 
+		fmt.Println("HANDLER ", trafficClass)
 		if trafficClass == classifierModel.GreenTrafficClass {
 
 		} else if trafficClass == classifierModel.YellowTrafficClass {

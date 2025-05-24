@@ -7,6 +7,7 @@ import (
 	"log"
 
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/ruslanonly/agent/internal/agent/protocols/heartbeatproto"
 	heartbeatprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/heartbeatproto/messages"
 )
@@ -58,20 +59,66 @@ func (a *Agent) checkAllPeersHeartbeat() {
 		// log.Printf("❤️❤️❤️: %s\n", peerInfo.ID)
 		connections := a.node.Host.Network().ConnsToPeer(peerInfo.ID)
 		if len(connections) == 0 {
-			a.disconnectPeer(peerInfo.ID, false)
+			a.handleUnreachablePeer(peerInfo.ID)
 			return
 		}
 
 		s, err := a.node.Host.NewStream(context.Background(), peerInfo.ID, heartbeatproto.ProtocolID)
 		if err != nil {
-			a.disconnectPeer(peerInfo.ID, false)
+			a.handleUnreachablePeer(peerInfo.ID)
 			return
 		}
 
 		if _, err := s.Write(append(marshalledMessage, '\n')); err != nil {
-			a.disconnectPeer(peerInfo.ID, false)
+			a.handleUnreachablePeer(peerInfo.ID)
 		}
 
 		s.Close()
 	}
+}
+
+func (a *Agent) checkPeerHeartbeat(peerID peer.ID) bool {
+	message := heartbeatprotomessages.Message{
+		Type: heartbeatprotomessages.CheckHeartbeatMessageType,
+	}
+
+	marshalledMessage, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("❤️ Ошибка при маршалинге сообщения-запроса на проверку heartbeat: %v\n", err)
+		return false
+	}
+
+	connections := a.node.Host.Network().ConnsToPeer(peerID)
+	if len(connections) == 0 {
+		a.handleUnreachablePeer(peerID)
+		return false
+	}
+
+	s, err := a.node.Host.NewStream(context.Background(), peerID, heartbeatproto.ProtocolID)
+	if err != nil {
+		a.handleUnreachablePeer(peerID)
+		return false
+	}
+
+	if _, err := s.Write(append(marshalledMessage, '\n')); err != nil {
+		a.handleUnreachablePeer(peerID)
+	}
+
+	s.Close()
+
+	return false
+}
+
+func (a *Agent) handleUnreachablePeer(peerID peer.ID) {
+	peer, peerFound := a.peers[peerID]
+	if peerFound {
+		if peer.Status.IsHub() {
+			// Необходимо организовать выборы и после подключиться к новому пиру
+
+		} else {
+
+		}
+	}
+
+	a.disconnectPeer(peerID, false)
 }

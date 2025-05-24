@@ -171,10 +171,10 @@ func (a *Agent) RedTrafficHubMessage(offenderIP net.IP) {
 
 // [HUB] Отправление информации о себе хабам
 func (a *Agent) InfoAboutMeHubMessage() {
-	fmt.Printf("🟪 Подготовка к информированию обо мне. (Мои пиры: %v)\n", a.peers)
+	fmt.Printf("🟪 Подготовка к информированию обо мне \n")
 	a.peersMutex.RLock()
 	defer a.peersMutex.RUnlock()
-	fmt.Printf("🟪 Информирование обо мне. (Мои пиры: %v)\n", a.peers)
+	fmt.Printf("🟪 Информирование обо мне\n")
 
 	status := a.getHubSlotsStatus()
 
