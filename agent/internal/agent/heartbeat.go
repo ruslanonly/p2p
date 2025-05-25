@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
@@ -23,8 +24,9 @@ func (a *Agent) heartbeatStreamHandler(stream libp2pNetwork.Stream) {
 	raw, err := buf.ReadString('\n')
 
 	if err != nil {
-		log.Println(buf)
-		log.Fatalf("❤️ Ошибка при обработке потока сообщений для heartbeat протокола: %v\n", err)
+		fmt.Printf("❤️ Ошибка при обработке потока сообщений для heartbeat протокола: %v\n", err)
+		stream.Close()
+		return
 	}
 
 	var msg heartbeatprotomessages.Message

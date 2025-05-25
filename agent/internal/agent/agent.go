@@ -498,12 +498,14 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 	var msg defaultprotomessages.Message
 
 	if err := decoder.Decode(&msg); err != nil {
-		log.Fatalf(
+		log.Printf(
 			"Ошибка при обработке потока сообщений от (%s %s): %v",
 			stream.Conn().RemotePeer(),
 			stream.Conn().RemoteMultiaddr(),
 			err,
 		)
+		stream.Close()
+		return
 	}
 
 	log.Printf("Получено сообщение: %s %s", msg.Type, string(msg.Body))

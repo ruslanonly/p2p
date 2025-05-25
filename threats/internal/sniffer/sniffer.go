@@ -33,13 +33,13 @@ func (s *Sniffer) Run(handler func(*model.TrafficParameters)) {
 	packetSource := gopacket.NewPacketSource(s.handle, s.handle.LinkType())
 
 	options := flows.FlowOptions{
-		ActiveTimeout: 5 * flows.SecondsInNanoseconds,
-		IdleTimeout:   5 * flows.SecondsInNanoseconds,
+		ActiveTimeout: 1 * flows.SecondsInNanoseconds,
+		IdleTimeout:   1 * flows.SecondsInNanoseconds,
 		TCPExpiry:     true,
-		PerPacket:     false,
+		WindowExpiry:  true,
 	}
 
-	fiveTuple := true
+	fiveTuple := false
 	records := flows.RecordListMaker{}
 
 	id := uint8(0)

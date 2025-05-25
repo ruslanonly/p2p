@@ -49,3 +49,15 @@ func (f *linuxFirewall) BlockedList() []net.IP {
 
 	return blocked
 }
+
+func (f *linuxFirewall) IsBlocked(ip net.IP) bool {
+	list := f.BlockedList()
+
+	for _, blockedIP := range list {
+		if ip.Equal(blockedIP) {
+			return true
+		}
+	}
+
+	return false
+}

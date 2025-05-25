@@ -1,7 +1,8 @@
 github.com/CN-TU/go-flows v0.0.0-20230313083432-9f5628c12456 h1:Tn3ivAsx4FjLZHoPiSnldEuiapxnbb4KhjvfbNbKllw=
 github.com/CN-TU/go-flows v0.0.0-20230313083432-9f5628c12456/go.mod h1:NOwAQdm8j41Msp/ET+n2TURNSetNXvEdcp8+QCFLp7k=
-github.com/CN-TU/go-ipfix v0.0.0-20190607191022-b148a3a1167d h1:CmsUsEPzNhU6HcOn+1lYqGntXXl7t+wCau9o5zy4CqU=
 github.com/CN-TU/go-ipfix v0.0.0-20190607191022-b148a3a1167d/go.mod h1:rqCCBF/Eaf+sPvt45YJhc36wDlWwtVMKu/ujfD7esxI=
+github.com/CN-TU/go-ipfix v0.0.0-20240611191116-e1d5a30c73c3 h1:XQpZrV9wM6as7zzM4QAl/mES+h32vQN3pknibs6cY9o=
+github.com/CN-TU/go-ipfix v0.0.0-20240611191116-e1d5a30c73c3/go.mod h1:rqCCBF/Eaf+sPvt45YJhc36wDlWwtVMKu/ujfD7esxI=
 github.com/Microsoft/go-winio v0.6.1 h1:9/kr64B9VUZrLm5YYwbGtUJnMgqWVOdUAXu6Migciow=
 github.com/Microsoft/go-winio v0.6.1/go.mod h1:LRdKpFKfdobln8UmuiYcKPot9D2v6svN5+sAH+4kjUM=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

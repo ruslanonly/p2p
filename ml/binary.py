@@ -103,7 +103,7 @@ X_train, X_test, y_train, y_test = train_test_split(
     X_scaled, y, test_size=0.2, random_state=42, stratify=y)
 
 # Обучение модели
-model = LogisticRegression(max_iter = 10000, C = 0.1, random_state = 0, solver = 'saga')
+model = LogisticRegression(max_iter = 250, C = 0.1, random_state = 0, solver = 'saga', verbose=1)
 model.fit(X_train, y_train)
 
 # Оценка модели
@@ -113,7 +113,7 @@ print(classification_report(y_test, y_pred))
 
 # Конвертация модели в ONNX
 initial_type = [('float_input', FloatTensorType([None, X.shape[1]]))]
-onnx_model = convert_sklearn(model, initial_types=initial_type, target_opset=12)
+onnx_model = convert_sklearn(model, initial_types=initial_type, options={id(model): {"zipmap": False}})
 
 print("ONNX inputs:")
 for inp in onnx_model.graph.input:

@@ -52,8 +52,9 @@ func (a *Agent) hubStreamHandler(stream libp2pNetwork.Stream) {
 	raw, err := buf.ReadString('\n')
 
 	if err != nil {
-		log.Println(buf)
-		log.Fatalf("🟪 Ошибка при обработке потока сообщений для hub протокола: %v\n", err)
+		fmt.Printf("🟪 Ошибка при обработке потока сообщений для hub протокола: %v\n", err)
+		stream.Close()
+		return
 	}
 
 	var message hubprotomessages.Message

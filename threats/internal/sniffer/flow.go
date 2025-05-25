@@ -263,7 +263,7 @@ type PacketEvent struct {
 }
 
 func (e *PacketEvent) Timestamp() flows.DateTimeNanoseconds { return e.timestamp }
-func (e *PacketEvent) Key() string                          { return e.key }
+func (e *PacketEvent) Key() string                          { return GenerateKey(e.Packet) }
 func (e *PacketEvent) LowToHigh() bool                      { return e.lowToHigh }
 func (e *PacketEvent) SetWindow(w uint64)                   { e.window = w }
 func (e *PacketEvent) Window() uint64                       { return e.window }
@@ -274,8 +274,6 @@ type CICIDSFlow struct {
 	flows.BaseFlow
 
 	handler func(*model.TrafficParameters)
-
-	table *flows.FlowTable
 
 	startTime flows.DateTimeNanoseconds
 	endTime   flows.DateTimeNanoseconds
@@ -321,8 +319,8 @@ func NewCICIDSFlow(
 	e flows.Event,
 	table *flows.FlowTable,
 	key string,
-	active bool,
-	ctx *flows.EventContext,
+	forward bool,
+	context *flows.EventContext,
 	id uint64,
 	handler func(*model.TrafficParameters),
 ) flows.Flow {
@@ -330,20 +328,18 @@ func NewCICIDSFlow(
 		handler: handler,
 	}
 
-	flow.Init(table, key, active, ctx, id)
-	flow.forwardMin = math.MaxInt
-	flow.minSegSizeForward = math.MaxInt
+	flow.Init(table, key, forward, context, id)
 
 	return flow
 }
 
 func (f *CICIDSFlow) Event(e flows.Event, ctx *flows.EventContext) {
+	f.BaseFlow.Event(e, ctx)
+
 	pkt, ok := e.(*PacketEvent)
 	if !ok {
 		return
 	}
-
-	fmt.Println("EVENT")
 
 	if f.startTime == 0 {
 		f.startTime = pkt.Timestamp()
@@ -455,11 +451,10 @@ func (f *CICIDSFlow) Event(e flows.Event, ctx *flows.EventContext) {
 		}
 	}
 
-	f.Export(flows.FlowEndReasonIdle, ctx, flows.DateTimeNanoseconds(time.Now().UnixNano()))
+	f.Export(flows.FlowEndReasonActive, ctx, flows.SecondsInNanoseconds)
 }
 
 func (f *CICIDSFlow) Export(reason flows.FlowEndReason, ctx *flows.EventContext, now flows.DateTimeNanoseconds) {
-	fmt.Println("EXPORTING")
 	duration := float64(f.endTime-f.startTime) / 1e9
 
 	fwdMean, fwdStd := meanAndStd(f.forwardPacketLengths)
@@ -595,5 +590,15 @@ func (f *CICIDSFlow) Export(reason flows.FlowEndReason, ctx *flows.EventContext,
 	}
 
 	f.handler(&features)
-	f.Stop()
+
+	f.BaseFlow.Export(reason, ctx, now)
+}
+
+func (f *CICIDSFlow) Init(table *flows.FlowTable, key string, forward bool, context *flows.EventContext, id uint64) {
+	f.BaseFlow.Init(table, key, forward, context, id)
+
+	f.forwardMax = 0
+	f.forwardMin = math.MaxInt
+
+	f.minSegSizeForward = math.MaxInt
 }
