@@ -46,3 +46,15 @@ func (f *darwinFirewall) BlockedList() []net.IP {
 	}
 	return ips
 }
+
+func (f *darwinFirewall) IsBlocked(ip net.IP) bool {
+	list := f.BlockedList()
+
+	for _, blockedIP := range list {
+		if ip.Equal(blockedIP) {
+			return true
+		}
+	}
+
+	return false
+}

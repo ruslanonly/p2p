@@ -29,8 +29,9 @@ func (a *Agent) pendingHubStreamHandler(stream libp2pNetwork.Stream) {
 	raw, err := buf.ReadString('\n')
 
 	if err != nil {
-		log.Println(buf)
-		log.Fatalf("⚡️ Ошибка при обработке потока сообщений для pending-hub протокола: %v", err)
+		fmt.Printf("⚡️ Ошибка при обработке потока сообщений для pending-hub протокола: %v\n", err)
+		stream.Close()
+		return
 	}
 
 	log.Printf("⚡️ Получено сообщение по pending-hub протоколу: %s", raw)

@@ -101,6 +101,19 @@ func (a *Agent) getMyHub() (*model.AgentPeerInfo, bool) {
 }
 
 // [ABONENT]
+func (a *Agent) getPeerPeers(targetPeerID peer.ID) map[peer.ID]model.AgentPeerInfoPeer {
+	segmentPeers := make(map[peer.ID]model.AgentPeerInfoPeer)
+
+	for peerID, peerInfo := range a.peers[targetPeerID].Peers {
+		if !peerInfo.Status.IsHub() {
+			segmentPeers[peerID] = peerInfo
+		}
+	}
+
+	return segmentPeers
+}
+
+// [ABONENT]
 func (a *Agent) getSegmentPeers() map[peer.ID]model.AgentPeerInfoPeer {
 	a.peersMutex.Lock()
 	defer a.peersMutex.Unlock()
@@ -485,12 +498,14 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 	var msg defaultprotomessages.Message
 
 	if err := decoder.Decode(&msg); err != nil {
-		log.Fatalf(
+		log.Printf(
 			"Ошибка при обработке потока сообщений от (%s %s): %v",
 			stream.Conn().RemotePeer(),
 			stream.Conn().RemoteMultiaddr(),
 			err,
 		)
+		stream.Close()
+		return
 	}
 
 	log.Printf("Получено сообщение: %s %s", msg.Type, string(msg.Body))

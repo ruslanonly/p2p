@@ -9,8 +9,6 @@ import (
 	"threats/internal/classifier"
 	classifierModel "threats/internal/classifier/model"
 	"threats/internal/sniffer"
-
-	"github.com/google/gopacket"
 )
 
 func main() {
@@ -34,33 +32,28 @@ func main() {
 
 	var fw firewall.FirewallManager = firewall.New()
 
-	aggregator, err := classifier.NewAggregator()
-	if err != nil {
-		log.Fatalf("❌ Не удалось инициализировать extractor параметров: %v", err)
-	}
-
 	cls := classifier.NewClassifier()
 
-	go snf.Run(func(packet gopacket.Packet) {
-		parameters, err1 := aggregator.Extract(packet)
-
-		if err1 != nil {
+	go snf.Run(func(parameters *classifierModel.TrafficParameters) {
+		if fw.IsBlocked(parameters.SrcIP) {
 			return
 		}
 
-		vector := aggregator.Vectorize(*parameters)
+		vector := parameters.Vectorize()
 		trafficClass := cls.Classify(vector)
 
-		if trafficClass == classifierModel.GreenTrafficClass {
-
-		} else if trafficClass == classifierModel.YellowTrafficClass {
+		if trafficClass == classifierModel.YellowTrafficClass {
+			log.Printf("🟡 [FIREWALL] Подозрительный узел %s", parameters.SrcIP)
 			ipc.YellowTrafficMessage(threatsModel.YellowTrafficMessageTypeBody{
 				IP: parameters.SrcIP,
 			})
-		} else {
-			fw.Block(parameters.SrcIP)
+		} else if trafficClass == classifierModel.RedTrafficClass {
+			log.Printf("🛑 [FIREWALL] Обнаружен красный узел %s %v", parameters.SrcIP, vector)
 			log.Printf("🛑 [FIREWALL] Блокировка узла %s", parameters.SrcIP)
 
+			fw.Block(parameters.SrcIP)
+
+			log.Println(fw.BlockedList())
 			ipc.RedTrafficMessage(threatsModel.RedTrafficMessageTypeBody{
 				IP: parameters.SrcIP,
 			})

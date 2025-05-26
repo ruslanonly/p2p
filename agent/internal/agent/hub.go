@@ -52,8 +52,9 @@ func (a *Agent) hubStreamHandler(stream libp2pNetwork.Stream) {
 	raw, err := buf.ReadString('\n')
 
 	if err != nil {
-		log.Println(buf)
-		log.Fatalf("🟪 Ошибка при обработке потока сообщений для hub протокола: %v\n", err)
+		fmt.Printf("🟪 Ошибка при обработке потока сообщений для hub протокола: %v\n", err)
+		stream.Close()
+		return
 	}
 
 	var message hubprotomessages.Message
@@ -171,10 +172,10 @@ func (a *Agent) RedTrafficHubMessage(offenderIP net.IP) {
 
 // [HUB] Отправление информации о себе хабам
 func (a *Agent) InfoAboutMeHubMessage() {
-	fmt.Printf("🟪 Подготовка к информированию обо мне. (Мои пиры: %v)\n", a.peers)
+	fmt.Printf("🟪 Подготовка к информированию обо мне \n")
 	a.peersMutex.RLock()
 	defer a.peersMutex.RUnlock()
-	fmt.Printf("🟪 Информирование обо мне. (Мои пиры: %v)\n", a.peers)
+	fmt.Printf("🟪 Информирование обо мне\n")
 
 	status := a.getHubSlotsStatus()
 

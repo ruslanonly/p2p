@@ -57,3 +57,15 @@ func (f *windowsFirewall) BlockedList() []net.IP {
 	}
 	return blocked
 }
+
+func (f *windowsFirewall) IsBlocked(ip net.IP) bool {
+	list := f.BlockedList()
+
+	for _, blockedIP := range list {
+		if ip.Equal(blockedIP) {
+			return true
+		}
+	}
+
+	return false
+}

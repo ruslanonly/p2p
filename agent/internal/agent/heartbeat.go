@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/ruslanonly/agent/internal/agent/model"
 	"github.com/ruslanonly/agent/internal/agent/protocols/heartbeatproto"
 	heartbeatprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/heartbeatproto/messages"
 )
@@ -22,8 +25,9 @@ func (a *Agent) heartbeatStreamHandler(stream libp2pNetwork.Stream) {
 	raw, err := buf.ReadString('\n')
 
 	if err != nil {
-		log.Println(buf)
-		log.Fatalf("❤️ Ошибка при обработке потока сообщений для heartbeat протокола: %v\n", err)
+		fmt.Printf("❤️ Ошибка при обработке потока сообщений для heartbeat протокола: %v\n", err)
+		stream.Close()
+		return
 	}
 
 	var msg heartbeatprotomessages.Message
@@ -58,20 +62,77 @@ func (a *Agent) checkAllPeersHeartbeat() {
 		// log.Printf("❤️❤️❤️: %s\n", peerInfo.ID)
 		connections := a.node.Host.Network().ConnsToPeer(peerInfo.ID)
 		if len(connections) == 0 {
-			a.disconnectPeer(peerInfo.ID, false)
+			a.handleUnreachablePeer(peerInfo.ID)
 			return
 		}
 
 		s, err := a.node.Host.NewStream(context.Background(), peerInfo.ID, heartbeatproto.ProtocolID)
 		if err != nil {
-			a.disconnectPeer(peerInfo.ID, false)
+			a.handleUnreachablePeer(peerInfo.ID)
 			return
 		}
 
 		if _, err := s.Write(append(marshalledMessage, '\n')); err != nil {
-			a.disconnectPeer(peerInfo.ID, false)
+			a.handleUnreachablePeer(peerInfo.ID)
 		}
 
 		s.Close()
 	}
+}
+
+func (a *Agent) checkPeerHeartbeat(peerID peer.ID) bool {
+	message := heartbeatprotomessages.Message{
+		Type: heartbeatprotomessages.CheckHeartbeatMessageType,
+	}
+
+	marshalledMessage, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("❤️ Ошибка при маршалинге сообщения-запроса на проверку heartbeat: %v\n", err)
+		return false
+	}
+
+	connections := a.node.Host.Network().ConnsToPeer(peerID)
+	if len(connections) == 0 {
+		a.handleUnreachablePeer(peerID)
+		return false
+	}
+
+	s, err := a.node.Host.NewStream(context.Background(), peerID, heartbeatproto.ProtocolID)
+	if err != nil {
+		a.handleUnreachablePeer(peerID)
+		return false
+	}
+
+	if _, err := s.Write(append(marshalledMessage, '\n')); err != nil {
+		a.handleUnreachablePeer(peerID)
+	}
+
+	s.Close()
+
+	return true
+}
+
+func (a *Agent) handleUnreachablePeer(peerID peer.ID) {
+	peer, peerFound := a.peers[peerID]
+	if peerFound {
+		if peer.Status.IsHub() {
+			// Необходимо организовать выборы и после подключиться к новому пиру
+			segmentPeersMap := a.getSegmentPeers()
+			segmentPeers := make([]model.AgentPeerInfoPeer, 0)
+
+			for peerID, segmentPeer := range segmentPeersMap {
+				isActive := a.checkPeerHeartbeat(peerID)
+				if isActive {
+					segmentPeers = append(segmentPeers, segmentPeer)
+				}
+			}
+
+			fmt.Println("initializeElectionForMySegment segmentPeers ", segmentPeers)
+			if len(segmentPeers) > 0 {
+				a.initializeElectionForMySegment(segmentPeers)
+			}
+		}
+	}
+
+	a.disconnectPeer(peerID, false)
 }

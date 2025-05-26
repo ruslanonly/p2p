@@ -2,6 +2,8 @@ package sniffer
 
 import (
 	"fmt"
+	"threats/internal/classifier/model"
+	"threats/internal/sniffer/flow"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
@@ -24,12 +26,17 @@ func NewSniffer(iface string) (*Sniffer, error) {
 	return &Sniffer{handle: handle}, nil
 }
 
-func (s *Sniffer) Run(handler func(gopacket.Packet)) {
+func (s *Sniffer) Run(handler func(*model.TrafficParameters)) {
 	defer s.handle.Close()
 
-	packetSource := gopacket.NewPacketSource(s.handle, s.handle.LinkType())
+	flowsMngr := flow.NewFlowsManager(handler)
 
+	packetSource := gopacket.NewPacketSource(s.handle, s.handle.LinkType())
 	for packet := range packetSource.Packets() {
-		handler(packet)
+		event := flow.FlowEvent{
+			Packet: packet,
+		}
+
+		flowsMngr.AddEvent(event)
 	}
 }
