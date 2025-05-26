@@ -47,7 +47,7 @@ func main() {
 	time.Sleep(3 * time.Second)
 
 	// Target peer multiaddress
-	targetAddrStr := "/ip4/127.0.0.1/tcp/5001/p2p/12D3KooWMK3iivw3dGYmcYYCwtZcrCeAHgXxwEBM4ufJn7paTB2C"
+	targetAddrStr := "/ip4/127.0.0.1/tcp/5001/p2p/12D3KooWA5BqSnQpdpcyqVWVQEixL39yaxNnWud8ZXrYf3TdpkJm"
 	targetAddr, err := ma.NewMultiaddr(targetAddrStr)
 	if err != nil {
 		log.Fatalf("Failed to parse multiaddr: %v", err)

@@ -9,6 +9,7 @@ import (
 
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/ruslanonly/agent/internal/agent/model"
 	"github.com/ruslanonly/agent/internal/agent/protocols/heartbeatproto"
 	heartbeatprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/heartbeatproto/messages"
 )
@@ -108,7 +109,7 @@ func (a *Agent) checkPeerHeartbeat(peerID peer.ID) bool {
 
 	s.Close()
 
-	return false
+	return true
 }
 
 func (a *Agent) handleUnreachablePeer(peerID peer.ID) {
@@ -116,9 +117,20 @@ func (a *Agent) handleUnreachablePeer(peerID peer.ID) {
 	if peerFound {
 		if peer.Status.IsHub() {
 			// Необходимо организовать выборы и после подключиться к новому пиру
+			segmentPeersMap := a.getSegmentPeers()
+			segmentPeers := make([]model.AgentPeerInfoPeer, 0)
 
-		} else {
+			for peerID, segmentPeer := range segmentPeersMap {
+				isActive := a.checkPeerHeartbeat(peerID)
+				if isActive {
+					segmentPeers = append(segmentPeers, segmentPeer)
+				}
+			}
 
+			fmt.Println("initializeElectionForMySegment segmentPeers ", segmentPeers)
+			if len(segmentPeers) > 0 {
+				a.initializeElectionForMySegment(segmentPeers)
+			}
 		}
 	}
 
