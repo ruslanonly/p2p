@@ -18,9 +18,6 @@ import (
 )
 
 func (a *Agent) hubMessage(messageType hubprotomessages.MessageType, body hubprotomessages.MessageBody) {
-	a.peersMutex.RLock()
-	defer a.peersMutex.RUnlock()
-
 	message := hubprotomessages.Message{
 		FromID:  a.node.Host.ID(),
 		Type:    messageType,
@@ -33,10 +30,10 @@ func (a *Agent) hubMessage(messageType hubprotomessages.MessageType, body hubpro
 	for _, hub := range hubs {
 		hubIDs = append(hubIDs, hub.ID)
 	}
-
 	if marshalledMessage, err := json.Marshal(message); err != nil {
 		log.Println("Ошибка при маршалинге broadcast-сообщения о красном трафике среди хабов:", err)
 	} else {
+		fmt.Println("Отправка сообщения ", messageType, hubIDs)
 		a.node.BroadcastToPeers(hubproto.ProtocolID, hubIDs, marshalledMessage)
 	}
 }
@@ -62,6 +59,8 @@ func (a *Agent) hubStreamHandler(stream libp2pNetwork.Stream) {
 		log.Printf("🟪 Ошибка при парсинге сообщения: %v\n", err)
 		return
 	}
+
+	log.Println("🟪 Сообщение от хаба", message.Type)
 
 	for _, visited := range message.Visited {
 		if visited == a.node.Host.ID() {
@@ -90,6 +89,8 @@ func (a *Agent) hubStreamHandler(stream libp2pNetwork.Stream) {
 
 	if message.Type == hubprotomessages.RedTrafficMessageType {
 		a.redTrafficHandler(message)
+	} else if message.Type == hubprotomessages.YellowTrafficMessageType {
+		a.yellowTrafficHandler(message)
 	} else if message.Type == hubprotomessages.InfoAboutHubMessageType {
 		var infoAboutMe hubprotomessages.InfoAboutHubMessageBody
 		if err := json.Unmarshal([]byte(message.Body), &infoAboutMe); err != nil {
@@ -154,9 +155,19 @@ func (a *Agent) redTrafficHandler(message hubprotomessages.Message) {
 
 	log.Printf("🚨 Получено сообщение о красном трафике от IP: %s", offenderIP)
 
-	a.threatsIPC.BlockHostMessage(offenderIP)
+	a.threatsStorage.ReportRedThreat(offenderIP, message.FromID)
+}
 
-	a.broadcastBlockTrafficToAbonents(offenderIP)
+// [HUB]
+func (a *Agent) yellowTrafficHandler(message hubprotomessages.Message) {
+	a.peersMutex.Lock()
+	defer a.peersMutex.Unlock()
+
+	var offenderIP net.IP = net.IP(message.Body)
+
+	log.Printf("🌝 Получено сообщение о желтом трафике от IP: %s", offenderIP)
+
+	a.threatsStorage.ReportYellowThreat(offenderIP, message.FromID)
 }
 
 func (a *Agent) RedTrafficHubMessage(offenderIP net.IP) {
@@ -167,7 +178,16 @@ func (a *Agent) RedTrafficHubMessage(offenderIP net.IP) {
 		hubprotomessages.RedTrafficMessageType,
 		hubprotomessages.MessageBody(offenderIP),
 	)
+}
 
+func (a *Agent) YellowTrafficHubMessage(offenderIP net.IP) {
+	a.peersMutex.Lock()
+	defer a.peersMutex.Unlock()
+
+	a.hubMessage(
+		hubprotomessages.YellowTrafficMessageType,
+		hubprotomessages.MessageBody(offenderIP),
+	)
 }
 
 // [HUB] Отправление информации о себе хабам

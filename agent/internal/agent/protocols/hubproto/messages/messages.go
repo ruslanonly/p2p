@@ -10,8 +10,9 @@ import (
 type MessageType string
 
 const (
-	RedTrafficMessageType   MessageType = "RedTrafficMessageType"
-	InfoAboutHubMessageType MessageType = "InfoAboutHubMessageType"
+	RedTrafficMessageType    MessageType = "RedTrafficMessageType"
+	YellowTrafficMessageType MessageType = "YellowTrafficMessageType"
+	InfoAboutHubMessageType  MessageType = "InfoAboutHubMessageType"
 )
 
 type MessageBody []byte

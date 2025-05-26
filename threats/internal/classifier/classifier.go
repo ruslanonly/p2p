@@ -69,15 +69,12 @@ func (c *Classifier) Classify(vector []float32) model.TrafficClass {
 		return model.GreenTrafficClass
 	}
 
-	// TODO
-	// var threshold float32 = 0.99
-	// if greenProba >= threshold {
-	// 	return model.GreenTrafficClass
-	// } else if redProba >= threshold {
-	// 	return model.RedTrafficClass
-	// }
+	var threshold float32 = 0.99
+	if greenProba >= threshold {
+		return model.GreenTrafficClass
+	} else if redProba >= threshold {
+		return model.RedTrafficClass
+	}
 
-	// return model.YellowTrafficClass
-
-	return model.GreenTrafficClass
+	return model.YellowTrafficClass
 }

@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,23 +48,46 @@ func main() {
 
 	time.Sleep(3 * time.Second)
 
-	// Target peer multiaddress
 	targetAddrStr := "/ip4/127.0.0.1/tcp/5001/p2p/12D3KooWA5BqSnQpdpcyqVWVQEixL39yaxNnWud8ZXrYf3TdpkJm"
-	targetAddr, err := ma.NewMultiaddr(targetAddrStr)
-	if err != nil {
-		log.Fatalf("Failed to parse multiaddr: %v", err)
+	var info *peer.AddrInfo
+	var connectErr error
+	const retryInterval = 3 * time.Second
+
+	for {
+		maddr, err := ma.NewMultiaddr(targetAddrStr)
+		if err != nil {
+			log.Fatalf("Failed to parse multiaddr: %v", err)
+		}
+
+		info, err = peer.AddrInfoFromP2pAddr(maddr)
+		if err != nil {
+			log.Printf("⚠️ Failed to get peer info: %v", err)
+			time.Sleep(retryInterval)
+			continue
+		}
+
+		connectErr = host.Connect(ctx, *info)
+		if connectErr == nil {
+			break // success
+		}
+
+		log.Printf("🚫 Failed to connect to peer: %v", connectErr)
+
+		if strings.Contains(connectErr.Error(), "peer id mismatch") {
+			re := regexp.MustCompile(`remote key matches ([\w\d]+)`)
+			matches := re.FindStringSubmatch(connectErr.Error())
+			if len(matches) > 1 {
+				actualPeerID := matches[1]
+				log.Printf("⚠️ Detected actual PeerID: %s", actualPeerID)
+				targetAddrStr = updatePeerID(targetAddrStr, actualPeerID)
+				log.Printf("🔁 Retrying with updated multiaddr: %s", targetAddrStr)
+			}
+		}
+
+		time.Sleep(retryInterval)
 	}
 
-	info, err := peer.AddrInfoFromP2pAddr(targetAddr)
-	if err != nil {
-		log.Fatalf("Failed to get peer info: %v", err)
-	}
-
-	if err := host.Connect(ctx, *info); err != nil {
-		log.Fatalf("Failed to connect to peer: %v", err)
-	}
-
-	log.Println("Connected to target peer")
+	log.Println("✅ Connected to target peer")
 
 	var wg sync.WaitGroup
 
@@ -86,7 +111,6 @@ func main() {
 					log.Printf("Stream %d: failed to send message: %v", id, err)
 					return
 				}
-				// Optional small delay to avoid overwhelming local resources too fast
 				time.Sleep(10 * time.Millisecond)
 			}
 
@@ -95,5 +119,14 @@ func main() {
 	}
 
 	wg.Wait()
-	log.Println("All streams finished")
+	log.Println("✅ All streams finished")
+}
+
+// updatePeerID заменяет старый PeerID в multiaddr на новый
+func updatePeerID(multiaddrStr, newPeerID string) string {
+	idx := strings.LastIndex(multiaddrStr, "/p2p/")
+	if idx == -1 {
+		return multiaddrStr
+	}
+	return multiaddrStr[:idx] + "/p2p/" + newPeerID
 }

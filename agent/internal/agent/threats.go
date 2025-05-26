@@ -69,7 +69,33 @@ func (a *Agent) informMyHubAboutRedTraffic(ip net.IP) {
 	}
 
 	if err := json.NewEncoder(s).Encode(message); err != nil {
-		log.Printf("Ошибка при отправке уведомления об отключении: %v\n", err)
+		log.Printf("Ошибка при отправке уведомления о красном трафике: %v\n", err)
+		return
+	}
+
+	s.Close()
+}
+
+// [ABONENT]
+func (a *Agent) informMyHubAboutYellowTraffic(ip net.IP) {
+	myHub, found := a.getMyHub()
+	if !found {
+		return
+	}
+
+	log.Printf("🔳 Отправка информации о желтом трафике своему хабу %s", myHub.ID)
+	s, err := a.node.Host.NewStream(context.Background(), myHub.ID, threatsproto.ProtocolID)
+	if err != nil {
+		return
+	}
+
+	message := threatsprotomessages.Message{
+		Type: threatsprotomessages.YellowTrafficMessageType,
+		IP:   ip,
+	}
+
+	if err := json.NewEncoder(s).Encode(message); err != nil {
+		log.Printf("Ошибка при отправке уведомления об желтом трафике: %v\n", err)
 		return
 	}
 

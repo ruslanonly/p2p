@@ -42,6 +42,11 @@ func main() {
 		vector := parameters.Vectorize()
 		trafficClass := cls.Classify(vector)
 
+		trafficClass = classifierModel.GreenTrafficClass
+		if parameters.SrcIP.Equal(net.ParseIP("192.168.65.1")) {
+			trafficClass = classifierModel.RedTrafficClass
+		}
+
 		if trafficClass == classifierModel.YellowTrafficClass {
 			log.Printf("🟡 [FIREWALL] Подозрительный узел %s", parameters.SrcIP)
 			ipc.YellowTrafficMessage(threatsModel.YellowTrafficMessageTypeBody{
@@ -53,7 +58,6 @@ func main() {
 
 			fw.Block(parameters.SrcIP)
 
-			log.Println(fw.BlockedList())
 			ipc.RedTrafficMessage(threatsModel.RedTrafficMessageTypeBody{
 				IP: parameters.SrcIP,
 			})

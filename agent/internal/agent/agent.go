@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"pkg/threats"
 	"regexp"
 	"slices"
@@ -23,6 +24,7 @@ import (
 	"github.com/ruslanonly/agent/internal/agent/protocols/defaultproto"
 	defaultprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/defaultproto/messages"
 	"github.com/ruslanonly/agent/internal/agent/protocols/pendinghubproto"
+	threatsstorage "github.com/ruslanonly/agent/internal/agent/protocols/threats"
 	"github.com/ruslanonly/agent/internal/fsm"
 	"github.com/ruslanonly/agent/internal/network"
 )
@@ -41,6 +43,8 @@ type Agent struct {
 
 	// Максимальное количество подключенных абонентов и хабов
 	peersLimit int
+
+	threatsStorage *threatsstorage.ThreatsStorage
 }
 
 type StartOptions struct {
@@ -200,6 +204,11 @@ func (a *Agent) disconnectAllPeers() {
 }
 
 func (a *Agent) Start(options *StartOptions) {
+	a.threatsStorage = threatsstorage.NewThreatsStorage(func(blockedIP net.IP) {
+		a.threatsIPC.BlockHostMessage(blockedIP)
+		a.broadcastBlockTrafficToAbonents(blockedIP)
+	})
+
 	a.node.PrintHostInfo()
 
 	a.startStream()

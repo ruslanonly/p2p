@@ -9,6 +9,8 @@ type MessageType string
 const (
 	// Отправляет абонент хабу
 	RedTrafficMessageType MessageType = "RedTrafficMessageType"
+	// Отправляет абонент хабу
+	YellowTrafficMessageType MessageType = "YellowTrafficMessageType"
 	// Отправляет хаб абоненту
 	BlockTrafficMessageType MessageType = "BlockHostMessageType"
 )
