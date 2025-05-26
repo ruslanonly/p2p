@@ -7,11 +7,16 @@ import (
 	"fmt"
 	"log"
 
+	"pkg/ma"
+
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/ruslanonly/agent/internal/agent/model"
+	"github.com/ruslanonly/agent/internal/agent/model/status"
 	"github.com/ruslanonly/agent/internal/agent/protocols/heartbeatproto"
 	heartbeatprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/heartbeatproto/messages"
+	"github.com/ruslanonly/agent/internal/fsm"
 )
 
 func (a *Agent) startHeartbeatStream() {
@@ -117,19 +122,65 @@ func (a *Agent) handleUnreachablePeer(peerID peer.ID) {
 	if peerFound {
 		if peer.Status.IsHub() {
 			// Необходимо организовать выборы и после подключиться к новому пиру
-			segmentPeersMap := a.getSegmentPeers()
+
+			segmentPeersMap := a.getPeerPeers(peerID)
 			segmentPeers := make([]model.AgentPeerInfoPeer, 0)
 
-			for peerID, segmentPeer := range segmentPeersMap {
-				isActive := a.checkPeerHeartbeat(peerID)
-				if isActive {
-					segmentPeers = append(segmentPeers, segmentPeer)
-				}
+			isHub, err := a.fsm.IsHub()
+			if err != nil {
+				a.disconnectPeer(peerID, false)
+				return
 			}
 
-			fmt.Println("initializeElectionForMySegment segmentPeers ", segmentPeers)
-			if len(segmentPeers) > 0 {
-				a.initializeElectionForMySegment(segmentPeers)
+			if isHub {
+				for _, segmentPeer := range segmentPeersMap {
+					if segmentPeer.Status != status.AbonentP2PStatus {
+						for _, addr := range segmentPeer.Addrs {
+							maddr, err := multiaddr.NewMultiaddr(addr)
+							if err == nil {
+								fmt.Println("ПОДКЛЮЧАЮСЬ К СОСЕДНЕМУ ХАБУ КАК ХАБ")
+								a.connectToHubAsHub(maddr, segmentPeer.ID)
+								a.disconnectPeer(peerID, false)
+								return
+							}
+						}
+					}
+				}
+			} else {
+				fmt.Println("segmentPeersMap ", segmentPeersMap)
+				for _, segmentPeer := range segmentPeersMap {
+					if segmentPeer.Status != status.AbonentP2PStatus {
+						for _, addr := range segmentPeer.Addrs {
+							maddr, err := multiaddr.NewMultiaddr(addr)
+							if err == nil {
+								ip := ma.MultiaddrToIP(maddr)
+								fmt.Println("ПОДКЛЮЧАЮСЬ К СОСЕДНЕМУ ХАБУ КАК АБОНЕНТ")
+								a.bootstrap(ip.String(), segmentPeer.ID.String())
+
+								a.disconnectPeer(peerID, false)
+								return
+							}
+						}
+					}
+				}
+
+				for peerID, segmentPeer := range segmentPeersMap {
+					if peerID == a.node.Host.ID() {
+						continue
+					}
+
+					isActive := a.checkPeerHeartbeat(peerID)
+					if isActive {
+						segmentPeers = append(segmentPeers, segmentPeer)
+					}
+				}
+
+				fmt.Println("initializeElectionForMySegment segmentPeers ", segmentPeers)
+				if len(segmentPeers) > 1 {
+					a.initializeElectionForMySegment(segmentPeers)
+				} else {
+					a.fsm.Event(fsm.BecomeHubAgentFSMEvent)
+				}
 			}
 		}
 	}

@@ -479,6 +479,79 @@ func (a *Agent) bootstrap(addr, peerID string) {
 	}
 }
 
+func (a *Agent) connectToHubAsHub(addr multiaddr.Multiaddr, peerID peer.ID) {
+	period := config.ReconnectTimeout
+
+	addrWithPeerID := fmt.Sprintf("%s/p2p/%s", addr, peerID)
+	maddr, err := multiaddr.NewMultiaddr(addrWithPeerID)
+	if err != nil {
+		log.Fatalf("Ошибка парсинга адреса bootstrap: %v", err)
+	}
+
+	log.Printf("Попытка подключиться к хаб-узлу: %s", maddr.String())
+
+	for {
+		hubAddrInfo, err := peer.AddrInfoFromP2pAddr(maddr)
+		if err != nil {
+			log.Printf("Ошибка парсинга peer.AddrInfo: %v", err)
+			time.Sleep(period)
+			continue
+		}
+
+		if err := a.node.Connect(*hubAddrInfo); err != nil {
+			log.Printf("Подключение к bootstrap не удалось: %v. Повтор через %s...", err, period)
+		} else {
+			s, err := a.node.Host.NewStream(context.Background(), hubAddrInfo.ID, defaultproto.ProtocolID)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+
+			msg := defaultprotomessages.Message{
+				Type: defaultprotomessages.ConnectRequestMessageAsHubType,
+			}
+
+			if err := json.NewEncoder(s).Encode(msg); err != nil {
+				log.Println("Ошибка при отправке запрос на подключение:", err)
+				return
+			}
+
+			reader := bufio.NewReader(s)
+			responseRaw, err := reader.ReadString('\n')
+			if err != nil {
+				log.Println("Ошибка при чтении ответа:", err)
+				return
+			}
+
+			var message defaultprotomessages.Message
+			if err := json.Unmarshal([]byte(responseRaw), &message); err != nil {
+				log.Println("Ошибка при парсинге сообщения:", err)
+				return
+			}
+
+			if message.Type == defaultprotomessages.ConnectedMessageType {
+				log.Printf("Я подключен к хабу")
+				a.fsm.Event(fsm.ConnectedToHubAgentFSMEvent)
+
+				var body defaultprotomessages.ConnectedMessageBody
+				if err := json.Unmarshal(message.Body, &body); err != nil {
+					log.Println("Ошибка при парсинге ответа:", err)
+					return
+				}
+
+				a.peers[hubAddrInfo.ID] = model.AgentPeerInfo{
+					ID:     hubAddrInfo.ID,
+					Status: statusmodel.HubFreeP2PStatus, // TODO: Необходимо указывать, что это просто хаб
+					Peers:  make(map[peer.ID]model.AgentPeerInfoPeer, 0),
+				}
+
+				a.handleInfoAboutSegment(hubAddrInfo.ID, body.Peers)
+			}
+			break
+		}
+	}
+}
+
 func (a *Agent) startStream() {
 	log.Println("Установлен обработчик сообщений для hub-потока")
 
