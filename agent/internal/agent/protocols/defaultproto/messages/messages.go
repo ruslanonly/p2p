@@ -10,6 +10,7 @@ type MessageType string
 
 const (
 	ConnectRequestMessageType            MessageType = "ConnectRequestMessageType"
+	ConnectRequestMessageAsHubType       MessageType = "ConnectRequestMessageAsHubType"
 	ConnectedMessageType                 MessageType = "ConnectedMessageType"
 	NotConnectedMessageType              MessageType = "NotConnectedMessageType"
 	NotConnectedAndWaitMessageType       MessageType = "NotConnectedAndWaitMessageType"
