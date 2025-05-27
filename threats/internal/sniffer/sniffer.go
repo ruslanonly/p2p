@@ -3,7 +3,7 @@ package sniffer
 import (
 	"fmt"
 	"threats/internal/classifier/model"
-	"threats/internal/sniffer/flow"
+	"threats/internal/sniffer/flows"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
@@ -29,11 +29,11 @@ func NewSniffer(iface string) (*Sniffer, error) {
 func (s *Sniffer) Run(handler func(*model.TrafficParameters)) {
 	defer s.handle.Close()
 
-	flowsMngr := flow.NewFlowsManager(handler)
+	flowsMngr := flows.NewFlowsManager(handler)
 
 	packetSource := gopacket.NewPacketSource(s.handle, s.handle.LinkType())
 	for packet := range packetSource.Packets() {
-		event := flow.FlowEvent{
+		event := flows.FlowEvent{
 			Packet: packet,
 		}
 

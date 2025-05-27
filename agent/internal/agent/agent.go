@@ -24,7 +24,7 @@ import (
 	"github.com/ruslanonly/agent/internal/agent/protocols/defaultproto"
 	defaultprotomessages "github.com/ruslanonly/agent/internal/agent/protocols/defaultproto/messages"
 	"github.com/ruslanonly/agent/internal/agent/protocols/pendinghubproto"
-	threatsstorage "github.com/ruslanonly/agent/internal/agent/protocols/threats"
+	threatsstorage "github.com/ruslanonly/agent/internal/agent/threats"
 	"github.com/ruslanonly/agent/internal/fsm"
 	"github.com/ruslanonly/agent/internal/network"
 )
@@ -660,7 +660,7 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 
 	slotsStatus := a.getHubSlotsStatus()
 
-	log.Printf("🔱 Мой статус: %s", slotsStatus, a.peers)
+	log.Printf("🔱 Мой статус: %s", slotsStatus)
 	if slotsStatus == statusmodel.FreeHubSlotsStatus {
 		a.handleConnectedOnConnectionRequest(stream)
 	} else {

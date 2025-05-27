@@ -7,9 +7,11 @@ services:
     networks:
       p2p_net:
         ipv4_address: 172.18.0.2
+      presentation_net:
     environment:
       - AGENT_ID=1
       - PEERS_LIMIT=2
+      - REPORT_URL=http://172.20.0.3:8080/report
     ports:
       - "5001:5000/tcp"
       - "5001:5000/udp"
@@ -19,4 +21,6 @@ services:
 
 networks:
   p2p_net:
+    external: true
+  presentation_net:
     external: true

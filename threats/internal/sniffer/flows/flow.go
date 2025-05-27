@@ -1,10 +1,12 @@
-package flow
+package flows
 
 import (
+	"fmt"
 	"math"
 	"net"
 	"strconv"
 	"sync"
+	"time"
 
 	"pkg/timestamp"
 	"threats/internal/classifier/model"
@@ -19,17 +21,12 @@ type FlowKey struct {
 	Protocol         string
 }
 
-func ExtractKeyFromPacket(packet gopacket.Packet) FlowKey {
+func ExtractKeyFromPacket(packet gopacket.Packet) (*FlowKey, error) {
 	net := packet.NetworkLayer()
 	trans := packet.TransportLayer()
 
 	if net == nil || trans == nil {
-		return FlowKey{
-			SrcIP:   "0",
-			SrcPort: "0",
-			DstIP:   "0",
-			DstPort: "0",
-		}
+		return nil, fmt.Errorf("отсутствуют необходимые уровни соединения для формирования ключа")
 	}
 
 	srcIP := net.NetworkFlow().Src().String()
@@ -37,12 +34,12 @@ func ExtractKeyFromPacket(packet gopacket.Packet) FlowKey {
 	srcPort := trans.TransportFlow().Src().String()
 	destPort := trans.TransportFlow().Dst().String()
 
-	return FlowKey{
+	return &FlowKey{
 		SrcIP:   srcIP,
 		SrcPort: srcPort,
 		DstIP:   dstIP,
 		DstPort: destPort,
-	}
+	}, nil
 }
 
 type FlowEvent struct {
@@ -72,6 +69,11 @@ func (evt *FlowEvent) isForward() bool {
 }
 
 type Flow struct {
+	key FlowKey
+
+	mu         sync.Mutex
+	LastActive time.Time
+
 	startTime timestamp.DateTimeNanoseconds
 	endTime   timestamp.DateTimeNanoseconds
 
@@ -79,7 +81,6 @@ type Flow struct {
 	forwardTimestamps  []timestamp.DateTimeNanoseconds
 	backwardTimestamps []timestamp.DateTimeNanoseconds
 
-	srcIP                 net.IP
 	dstPort               int
 	forwardPacketLengths  []int
 	backwardPacketLengths []int
@@ -112,11 +113,19 @@ type Flow struct {
 	minSegSizeForward int
 }
 
-func NewFlow() *Flow {
+func NewFlow(key FlowKey) *Flow {
 	return &Flow{
+		key:               key,
+		forwardMax:        0,
 		forwardMin:        math.MaxInt,
 		minSegSizeForward: math.MaxInt,
 	}
+}
+
+func (f *Flow) IsExpired(timeout time.Duration) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return time.Since(f.LastActive) > timeout
 }
 
 func (f *Flow) AddPacket(evt FlowEvent) {
@@ -130,14 +139,9 @@ func (f *Flow) AddPacket(evt FlowEvent) {
 		f.startTime = timestamp
 	}
 
-	if f.srcIP == nil {
-		if netLayer := pkt.NetworkLayer(); netLayer != nil {
-			f.srcIP = net.ParseIP(netLayer.NetworkFlow().Src().String())
-		}
-		if trans := pkt.TransportLayer(); trans != nil {
-			if port, err := strconv.Atoi(trans.TransportFlow().Dst().String()); err == nil {
-				f.dstPort = port
-			}
+	if trans := pkt.TransportLayer(); trans != nil {
+		if port, err := strconv.Atoi(trans.TransportFlow().Dst().String()); err == nil {
+			f.dstPort = port
 		}
 	}
 
@@ -254,7 +258,7 @@ func (f *Flow) Export() model.TrafficParameters {
 	activeStats, idleStats := calculateActiveIdleFeatures(timestamp.DateTimeNanosecondsArrToTimeArr(f.allTimestamps))
 
 	features := model.TrafficParameters{
-		SrcIP:                   f.srcIP,
+		SrcIP:                   net.ParseIP(f.key.SrcIP),
 		DestinationPort:         float32(f.dstPort),
 		FlowDuration:            float32(durationInSeconds * 1e9),
 		TotalFwdPackets:         float32(f.forwardPackets),
@@ -361,37 +365,4 @@ func (f *Flow) Export() model.TrafficParameters {
 	}
 
 	return features
-}
-
-type FlowsManager struct {
-	flows map[FlowKey]*Flow
-	mu    sync.Mutex
-
-	exporter func(*model.TrafficParameters)
-}
-
-func NewFlowsManager(exporter func(*model.TrafficParameters)) *FlowsManager {
-	return &FlowsManager{
-		flows:    make(map[FlowKey]*Flow),
-		exporter: exporter,
-	}
-}
-
-func (m *FlowsManager) AddEvent(evt FlowEvent) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	key := ExtractKeyFromPacket(evt.Packet)
-
-	flow, exists := m.flows[key]
-	if !exists {
-		flow = NewFlow()
-		m.flows[key] = flow
-	} else {
-		flow.Export()
-		features := flow.Export()
-		m.exporter(&features)
-	}
-
-	flow.AddPacket(evt)
 }

@@ -8,6 +8,8 @@ import (
 	"threats/internal/classifier/model"
 	"time"
 
+	pkgIP "pkg/ip"
+
 	"github.com/CN-TU/go-flows/flows"
 	"github.com/CN-TU/go-ipfix"
 	"github.com/google/gopacket"
@@ -235,7 +237,7 @@ func DetermineDirection(packet gopacket.Packet) bool {
 	}
 	ip, _ := ipLayer.(*layers.IPv4)
 
-	if isLocalIP(ip.SrcIP) {
+	if pkgIP.IsLocalIP(ip.SrcIP) {
 		return true
 	} else {
 		return false

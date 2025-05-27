@@ -1,8 +1,45 @@
-package sniffer
+package ip
 
 import "net"
 
-func getLocalIPs() []net.IP {
+func MyIP() net.IP {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return net.IPv4zero
+	}
+
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			var ip net.IP
+
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+
+			if ip == nil || ip.IsLoopback() || ip.To4() == nil {
+				continue
+			}
+
+			return ip
+		}
+	}
+
+	return net.IPv4zero
+}
+
+func MyIPs() []net.IP {
 	var ips []net.IP
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -35,8 +72,8 @@ func getLocalIPs() []net.IP {
 	return ips
 }
 
-func isLocalIP(ip net.IP) bool {
-	localIPs := getLocalIPs()
+func IsLocalIP(ip net.IP) bool {
+	localIPs := MyIPs()
 
 	for _, localIP := range localIPs {
 		if localIP.Equal(ip) {
