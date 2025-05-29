@@ -37,10 +37,11 @@ func (a *Agent) organizeSegmentHubElection() []peer.ID {
 	var message defaultprotomessages.Message
 	if len(abonents) == 1 {
 		// Абонент становится хабом сразу, если он единственный абонент в сегменте
-		log.Printf("Отправка сообщения о необходимости стать единственным хабом")
+		log.Printf("Отправка сообщения о необходимости стать единственным хабом %s", abonent.ID)
 		message = defaultprotomessages.Message{
 			Type: defaultprotomessages.BecomeOnlyOneHubMessageType,
 		}
+		peerIDs = append(peerIDs, abonent.ID)
 	} else {
 		// Первый абонент из списка абонентов должен являться инициатором выборов среди другого сегмента, о котором он знает
 		log.Printf("Отправка сообщения о необходимости инициализировать выборы среди абонентов сегмента")

@@ -42,10 +42,10 @@ func main() {
 		vector := parameters.Vectorize()
 		trafficClass := cls.Classify(vector)
 
-		// trafficClass = classifierModel.GreenTrafficClass
-		// if parameters.SrcIP.Equal(net.ParseIP("192.168.65.1")) {
-		// 	trafficClass = classifierModel.RedTrafficClass
-		// }
+		trafficClass = classifierModel.GreenTrafficClass
+		if parameters.SrcIP.Equal(net.ParseIP("192.168.65.1")) {
+			trafficClass = classifierModel.YellowTrafficClass
+		}
 
 		if trafficClass == classifierModel.YellowTrafficClass {
 			log.Printf("🟡 [FIREWALL] Подозрительный узел %s", parameters.SrcIP)

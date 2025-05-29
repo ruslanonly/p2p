@@ -68,6 +68,40 @@ services:
       - NET_ADMIN
     privileged: true
 
+  agent10:
+      build: .
+      container_name: p2p_agent_10
+      networks:
+        - p2p_net
+        - presentation_net
+      environment:
+        - AGENT_ID=10
+        - BOOTSTRAP_IP=172.18.0.2
+        - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
+        - REPORT_URL=http://172.20.0.3:8080/report
+        - PEERS_LIMIT=2
+      command: sh -c "sleep 4 && ./agent"
+      cap_add:
+        - NET_ADMIN
+      privileged: true
+
+  agent11:
+      build: .
+      container_name: p2p_agent_11
+      networks:
+        - p2p_net
+        - presentation_net
+      environment:
+        - AGENT_ID=11
+        - BOOTSTRAP_IP=172.18.0.2
+        - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
+        - REPORT_URL=http://172.20.0.3:8080/report
+        - PEERS_LIMIT=2
+      command: sh -c "sleep 5 && ./agent"
+      cap_add:
+        - NET_ADMIN
+      privileged: true
+
 networks:
   p2p_net:
     external: true

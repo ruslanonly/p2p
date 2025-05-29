@@ -2,25 +2,38 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-type AgentReportNeighbor struct {
+type AgentReportNeighbour struct {
 	ID    string `json:"id"`
 	IsHub bool   `json:"is_hub"`
 }
 
 type AgentReport struct {
-	ID        string                `json:"agent_id"`
-	Name      string                `json:"name"`
-	Blocked   []net.IP              `json:"blocked"`
-	Neighbors []AgentReportNeighbor `json:"neighbors"`
+	ID            string                 `json:"agent_id"`
+	Name          string                 `json:"name"`
+	State         string                 `json:"state"`
+	Neighbors     []AgentReportNeighbour `json:"neighbors"`
+	YellowReports map[string][]peer.ID   `json:"yellow_reports"`
+	RedReports    map[string][]peer.ID   `json:"red_reports"`
+	BlockedHosts  []net.IP               `json:"blocked_reports"`
+}
+
+func netIPToStringSlice(ips []net.IP) []string {
+	strs := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		strs = append(strs, ip.String())
+	}
+	return strs
 }
 
 func main() {
@@ -52,22 +65,41 @@ func handleReport(driver neo4j.DriverWithContext, c *gin.Context) {
 		return
 	}
 
+	yellowReportsJSON, err := json.Marshal(report.YellowReports)
+	if err != nil {
+		log.Println("Failed to serialize yellowReports:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to serialize yellowReports"})
+		return
+	}
+	redReportsJSON, err := json.Marshal(report.RedReports)
+	if err != nil {
+		log.Println("Failed to serialize redReports:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to serialize redReports"})
+		return
+	}
+
 	ctx := context.Background()
 	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer session.Close(ctx)
 
-	_, err := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (interface{}, error) {
+	_, err = session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (interface{}, error) {
 		// Собираем ID всех соседей
 		neighbourIDs := map[string]bool{}
 		for _, n := range report.Neighbors {
 			neighbourIDs[n.ID] = true
 		}
 
-		// Обновляем или создаём текущего агента
 		_, err := tx.Run(ctx,
 			`MERGE (a:Agent {id: $id})
-			 SET a.name = $name, a.isHub = false`,
-			map[string]interface{}{"id": report.ID, "name": report.Name},
+			 SET a.name = $name, a.state = $state, a.yellowReports = $yellowReports, a.redReports = $redReports, a.blockedHosts = $blockedHosts`,
+			map[string]interface{}{
+				"id":            report.ID,
+				"name":          report.Name,
+				"state":         report.State,
+				"yellowReports": string(yellowReportsJSON),
+				"redReports":    string(redReportsJSON),
+				"blockedHosts":  netIPToStringSlice(report.BlockedHosts),
+			},
 		)
 		if err != nil {
 			return nil, err
@@ -86,31 +118,18 @@ func handleReport(driver neo4j.DriverWithContext, c *gin.Context) {
 
 		// Обновляем или создаём соседей и связи
 		for _, neighbour := range report.Neighbors {
-			// Обновляем или создаём узел-соседа
-			_, err := tx.Run(ctx,
-				`MERGE (n:Agent {id: $id})
-				 SET n.isHub = $isHub`,
-				map[string]interface{}{
-					"id":    neighbour.ID,
-					"isHub": neighbour.IsHub,
-				},
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			// Устанавливаем направление связи
 			relationship := "IS_HUB_FOR"
 			if neighbour.IsHub {
 				relationship = "IS_ABONENT_FOR"
 			}
 
-			// Устанавливаем связь
 			_, err = tx.Run(ctx,
 				fmt.Sprintf(`
 				MATCH (a:Agent {id: $agent})
 				MATCH (b:Agent {id: $neighbour})
-				MERGE (a)-[:%s]->(b)`, relationship),
+				OPTIONAL MATCH (a)-[r]->(b)
+				DELETE r
+				CREATE (a)-[:%s]->(b)`, relationship),
 				map[string]interface{}{
 					"agent":     report.ID,
 					"neighbour": neighbour.ID,
@@ -119,6 +138,19 @@ func handleReport(driver neo4j.DriverWithContext, c *gin.Context) {
 			if err != nil {
 				return nil, err
 			}
+		}
+
+		_, err = tx.Run(ctx, `
+			MATCH (a:Agent)-[r1:IS_ABONENT_FOR]->(b:Agent)
+			MATCH (b)-[r2:IS_ABONENT_FOR]->(a)
+			WHERE id(r1) < id(r2)
+			WITH a, b, r1, r2
+			DELETE r1, r2
+			CREATE (a)-[:HUB]->(b)
+			CREATE (b)-[:HUB]->(a)
+		`, nil)
+		if err != nil {
+			return nil, err
 		}
 
 		return nil, nil

@@ -48,7 +48,7 @@ func main() {
 
 	time.Sleep(3 * time.Second)
 
-	targetAddrStr := "/ip4/127.0.0.1/tcp/5001/p2p/12D3KooWA5BqSnQpdpcyqVWVQEixL39yaxNnWud8ZXrYf3TdpkJm"
+	targetAddrStr := "/ip4/127.0.0.1/tcp/5003/p2p/12D3KooWA5BqSnQpdpcyqVWVQEixL39yaxNnWud8ZXrYf3TdpkJm"
 	var info *peer.AddrInfo
 	var connectErr error
 	const retryInterval = 3 * time.Second

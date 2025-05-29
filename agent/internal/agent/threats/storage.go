@@ -41,7 +41,7 @@ func (ts *ThreatsStorage) ReportYellowThreat(targetIP net.IP, reporter peer.ID) 
 		ts.YellowReports[ipStr] = append(ts.YellowReports[ipStr], reporter)
 	}
 
-	if len(ts.YellowReports[ipStr]) >= 3 {
+	if len(ts.YellowReports[ipStr]) >= 2 {
 		ts.BlockHost(targetIP, "yellow threshold reached")
 	}
 }
@@ -60,7 +60,7 @@ func (ts *ThreatsStorage) ReportRedThreat(targetIP net.IP, reporter peer.ID) {
 		ts.RedReports[ipStr] = append(ts.RedReports[ipStr], reporter)
 	}
 
-	if len(ts.RedReports[ipStr]) >= 3 {
+	if len(ts.RedReports[ipStr]) >= 2 {
 		ts.BlockHost(targetIP, "red threshold reached")
 	}
 }

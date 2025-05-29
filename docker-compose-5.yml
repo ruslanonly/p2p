@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  agent5:
+    build: .
+    container_name: p2p_agent_5
+    networks:
+      - p2p_net
+      - presentation_net
+    environment:
+      - AGENT_ID=5
+      - BOOTSTRAP_IP=172.18.0.2
+      - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
+      - REPORT_URL=http://172.20.0.3:8080/report
+      - PEERS_LIMIT=2
+    ports:
+      - "5005:5000/tcp"
+      - "5005:5000/udp"
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+
+networks:
+  p2p_net:
+    external: true
+  presentation_net:
+    external: true
