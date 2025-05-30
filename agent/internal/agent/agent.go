@@ -670,7 +670,7 @@ func (a *Agent) handleConnectionRequestMessage(stream libp2pNetwork.Stream) {
 	} else {
 		var msg defaultprotomessages.Message
 
-		if slotsStatus == statusmodel.FullHavingAbonentsHubSlotsStatus {
+		if slotsStatus == statusmodel.FullHavingAbonentsHubSlotsStatus && a.fsm.FSM.Can(fsm.OrganizeSegmentHubElectionAgentFSMEvent) {
 			msg = defaultprotomessages.Message{
 				Type: defaultprotomessages.NotConnectedAndWaitMessageType,
 			}

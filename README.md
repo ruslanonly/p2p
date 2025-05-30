@@ -12,4 +12,7 @@
 MATCH (a:Agent)-[r]->(b:Agent)
 WHERE type(r) IN ['IS_HUB_FOR', 'IS_ABONENT_FOR']
 RETURN a, r, b
+
+
+MATCH (a:Agent) DETACH DELETE a
 ```

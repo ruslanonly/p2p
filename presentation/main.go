@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -26,6 +26,8 @@ type AgentReport struct {
 	YellowReports map[string][]peer.ID   `json:"yellow_reports"`
 	RedReports    map[string][]peer.ID   `json:"red_reports"`
 	BlockedHosts  []net.IP               `json:"blocked_reports"`
+	PeerHubs      []string               `json:"peer_hubs"`
+	PeerAbonents  []string               `json:"peer_abonents"`
 }
 
 func netIPToStringSlice(ips []net.IP) []string {
@@ -49,8 +51,13 @@ func main() {
 	ensureAgentIDUniqueConstraint(driver)
 
 	r := gin.Default()
+
+	var mu sync.Mutex
+
 	r.POST("/report", func(ctx *gin.Context) {
+		mu.Lock()
 		handleReport(driver, ctx)
+		mu.Unlock()
 	})
 
 	log.Println("Server running on :8080")
@@ -83,15 +90,15 @@ func handleReport(driver neo4j.DriverWithContext, c *gin.Context) {
 	defer session.Close(ctx)
 
 	_, err = session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (interface{}, error) {
-		// Собираем ID всех соседей
-		neighbourIDs := map[string]bool{}
-		for _, n := range report.Neighbors {
-			neighbourIDs[n.ID] = true
-		}
-
 		_, err := tx.Run(ctx,
-			`MERGE (a:Agent {id: $id})
-			 SET a.name = $name, a.state = $state, a.yellowReports = $yellowReports, a.redReports = $redReports, a.blockedHosts = $blockedHosts`,
+			`MERGE (a:Agent {pid: $id})
+			 SET a.name = $name,
+			     a.state = $state,
+			     a.yellowReports = $yellowReports,
+			     a.redReports = $redReports,
+			     a.blockedHosts = $blockedHosts,
+			     a.peerHubs = $peerHubs,
+			     a.peerAbonents = $peerAbonents`,
 			map[string]interface{}{
 				"id":            report.ID,
 				"name":          report.Name,
@@ -99,59 +106,85 @@ func handleReport(driver neo4j.DriverWithContext, c *gin.Context) {
 				"yellowReports": string(yellowReportsJSON),
 				"redReports":    string(redReportsJSON),
 				"blockedHosts":  netIPToStringSlice(report.BlockedHosts),
-			},
-		)
+				"peerHubs":      report.PeerHubs,
+				"peerAbonents":  report.PeerAbonents,
+			})
 		if err != nil {
 			return nil, err
 		}
 
-		// Удаляем все исходящие связи, которых нет в новых данных
+		// Удаляем устаревшие IS_ABONENT_FOR связи
 		_, err = tx.Run(ctx, `
-			MATCH (a:Agent {id: $id})-[r]->(other:Agent)
-			WHERE NOT other.id IN $neighbours
-			DELETE r`,
-			map[string]interface{}{"id": report.ID, "neighbours": keys(neighbourIDs)},
-		)
+			MATCH (a:Agent {pid: $id})-[r:IS_ABONENT_FOR]->(b:Agent)
+			WHERE NOT (b.pid IN $peerHubs)
+			DELETE r
+		`, map[string]interface{}{
+			"id":       report.ID,
+			"peerHubs": report.PeerHubs,
+		})
 		if err != nil {
 			return nil, err
 		}
 
-		// Обновляем или создаём соседей и связи
-		for _, neighbour := range report.Neighbors {
-			relationship := "IS_HUB_FOR"
-			if neighbour.IsHub {
-				relationship = "IS_ABONENT_FOR"
-			}
+		// Удаляем устаревшие IS_HUB_FOR связи
+		_, err = tx.Run(ctx, `
+			MATCH (a:Agent {pid: $id})-[r:IS_HUB_FOR]->(b:Agent)
+			WHERE NOT (b.pid IN $peerAbonents)
+			DELETE r
+		`, map[string]interface{}{
+			"id":           report.ID,
+			"peerAbonents": report.PeerAbonents,
+		})
+		if err != nil {
+			return nil, err
+		}
 
-			_, err = tx.Run(ctx,
-				fmt.Sprintf(`
-				MATCH (a:Agent {id: $agent})
-				MATCH (b:Agent {id: $neighbour})
-				OPTIONAL MATCH (a)-[r]->(b)
-				DELETE r
-				CREATE (a)-[:%s]->(b)`, relationship),
+		// Добавляем связи к peerHubs
+		for _, hubID := range report.PeerHubs {
+			_, err := tx.Run(ctx,
+				`MATCH (hub:Agent {pid: $hubID})
+				 MATCH (a:Agent {pid: $agentID})
+				 OPTIONAL MATCH (hub)-[r]->(a)
+				 DELETE r
+				 CREATE (hub)-[:IS_HUB_FOR]->(a)`,
 				map[string]interface{}{
-					"agent":     report.ID,
-					"neighbour": neighbour.ID,
-				},
-			)
+					"hubID":   hubID,
+					"agentID": report.ID,
+				})
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		_, err = tx.Run(ctx, `
-			MATCH (a:Agent)-[r1:IS_ABONENT_FOR]->(b:Agent)
-			MATCH (b)-[r2:IS_ABONENT_FOR]->(a)
-			WHERE id(r1) < id(r2)
-			WITH a, b, r1, r2
-			DELETE r1, r2
-			CREATE (a)-[:HUB]->(b)
-			CREATE (b)-[:HUB]->(a)
-		`, nil)
-		if err != nil {
-			return nil, err
+		// Добавляем связи к peerAbonents
+		for _, abonentID := range report.PeerAbonents {
+			_, err := tx.Run(ctx,
+				`MATCH (abonent:Agent {pid: $abonentID})
+				 MATCH (a:Agent {pid: $agentID})
+				 OPTIONAL MATCH (abonent)-[r]->(a)
+				 DELETE r
+				 CREATE (abonent)-[:IS_ABONENT_FOR]->(a)`,
+				map[string]interface{}{
+					"abonentID": abonentID,
+					"agentID":   report.ID,
+				})
+			if err != nil {
+				return nil, err
+			}
 		}
+
+		// // Объединение двухсторонних связей в HUB <-> HUB
+		// _, err = tx.Run(ctx, `
+		// 	MATCH (a:Agent)-[r1:IS_ABONENT_FOR]->(b:Agent)
+		// 	MATCH (b)-[r2:IS_ABONENT_FOR]->(a)
+		// 	WHERE id(r1) < id(r2)
+		// 	DELETE r1, r2
+		// 	CREATE (a)-[:HUB]->(b)
+		// 	CREATE (b)-[:HUB]->(a)
+		// `, nil)
+		// if err != nil {
+		// 	return nil, err
+		// }
 
 		return nil, nil
 	})
@@ -165,14 +198,6 @@ func handleReport(driver neo4j.DriverWithContext, c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "OK"})
 }
 
-func keys(m map[string]bool) []string {
-	result := make([]string, 0, len(m))
-	for k := range m {
-		result = append(result, k)
-	}
-	return result
-}
-
 func ensureAgentIDUniqueConstraint(driver neo4j.DriverWithContext) error {
 	ctx := context.Background()
 
@@ -183,7 +208,7 @@ func ensureAgentIDUniqueConstraint(driver neo4j.DriverWithContext) error {
 		_, err := tx.Run(ctx, `
 			CREATE CONSTRAINT unique_agent_id IF NOT EXISTS
 			FOR (a:Agent)
-			REQUIRE a.id IS UNIQUE
+			REQUIRE a.pid IS UNIQUE
 		`, nil)
 		return nil, err
 	})
