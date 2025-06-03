@@ -1,0 +1,16 @@
+@startuml
+actor "Абонент" as Client
+participant "Хаб" as Hub
+participant "Другие хабы" as OtherHubs
+participant "Другие абоненты\nсегмента" as OtherClients
+
+group Обнаружение зловредного трафика хабом напрямую
+    Hub -> Hub: Обнаружить зловредный трафик самостоятельно
+    Hub -> Hub: Добавить IP в список красных
+    Hub -> OtherClients: Распространить команду блокировки IP
+    OtherClients -> OtherClients: Добавить IP в список заблокированных
+    Hub -> OtherHubs: Отправить сообщение о зловредном трафике (IP)
+    OtherHubs -> OtherHubs: Добавить IP в список красных
+end
+
+@enduml

@@ -1,0 +1,188 @@
+version: '3.8'
+
+services:
+  agent12:
+      build: .
+      container_name: p2p_agent_12
+      networks:
+        - p2p_net
+        - presentation_net
+      environment:
+        - AGENT_ID=12
+        - BOOTSTRAP_IP=172.18.0.2
+        - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
+        - REPORT_URL=http://172.20.0.3:8080/report
+        - PEERS_LIMIT=3
+      command: sh -c "sleep 11 && ./agent"
+      ports:
+        - "5012:5000/tcp"
+        - "5012:5000/udp"
+      cap_add:
+        - NET_ADMIN
+      privileged: true
+
+  agent13:
+      build: .
+      container_name: p2p_agent_13
+      networks:
+        - p2p_net
+        - presentation_net
+      environment:
+        - AGENT_ID=13
+        - BOOTSTRAP_IP=172.18.0.2
+        - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
+        - REPORT_URL=http://172.20.0.3:8080/report
+        - PEERS_LIMIT=3
+      command: sh -c "sleep 12 && ./agent"
+      ports:
+        - "5013:5000/tcp"
+        - "5013:5000/udp"
+      cap_add:
+        - NET_ADMIN
+      privileged: true
+  
+  agent14:
+      build: .
+      container_name: p2p_agent_14
+      networks:
+        - p2p_net
+        - presentation_net
+      environment:
+        - AGENT_ID=14
+        - BOOTSTRAP_IP=172.18.0.2
+        - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
+        - REPORT_URL=http://172.20.0.3:8080/report
+        - PEERS_LIMIT=3
+      command: sh -c "sleep 14 && ./agent"
+      ports:
+        - "5014:5000/tcp"
+        - "5014:5000/udp"
+      cap_add:
+        - NET_ADMIN
+      privileged: true
+  
+  agent15:
+    build: .
+    container_name: p2p_agent_15
+    networks:
+      - p2p_net
+      - presentation_net
+    environment:
+      - AGENT_ID=15
+      - BOOTSTRAP_IP=172.18.0.2
+      - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
+      - REPORT_URL=http://172.20.0.3:8080/report
+      - PEERS_LIMIT=3
+    command: sh -c "sleep 15 && ./agent"
+    ports:
+      - "5015:5000/tcp"
+      - "5015:5000/udp"
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+
+  agent16:
+    build: .
+    container_name: p2p_agent_16
+    networks:
+      - p2p_net
+      - presentation_net
+    environment:
+      - AGENT_ID=16
+      - BOOTSTRAP_IP=172.18.0.2
+      - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
+      - REPORT_URL=http://172.20.0.3:8080/report
+      - PEERS_LIMIT=3
+    command: sh -c "sleep 16 && ./agent"
+    ports:
+      - "5016:5000/tcp"
+      - "5016:5000/udp"
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+
+  agent17:
+    build: .
+    container_name: p2p_agent_17
+    networks:
+      - p2p_net
+      - presentation_net
+    environment:
+      - AGENT_ID=17
+      - BOOTSTRAP_IP=172.18.0.2
+      - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
+      - REPORT_URL=http://172.20.0.3:8080/report
+      - PEERS_LIMIT=3
+    command: sh -c "sleep 17 && ./agent"
+    ports:
+      - "5017:5000/tcp"
+      - "5017:5000/udp"
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+
+  agent18:
+    build: .
+    container_name: p2p_agent_18
+    networks:
+      - p2p_net
+      - presentation_net
+    environment:
+      - AGENT_ID=18
+      - BOOTSTRAP_IP=172.18.0.2
+      - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
+      - REPORT_URL=http://172.20.0.3:8080/report
+      - PEERS_LIMIT=3
+    command: sh -c "sleep 18 && ./agent"
+    ports:
+      - "5018:5000/tcp"
+      - "5018:5000/udp"
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+
+  agent19:
+    build: .
+    container_name: p2p_agent_19
+    networks:
+      - p2p_net
+      - presentation_net
+    environment:
+      - AGENT_ID=19
+      - BOOTSTRAP_IP=172.18.0.2
+      - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
+      - REPORT_URL=http://172.20.0.3:8080/report
+      - PEERS_LIMIT=3
+    command: sh -c "sleep 19 && ./agent"
+    ports:
+      - "5019:5000/tcp"
+      - "5019:5000/udp"
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+
+  agent20:
+    build: .
+    container_name: p2p_agent_20
+    networks:
+      - p2p_net
+      - presentation_net
+    environment:
+      - AGENT_ID=20
+      - BOOTSTRAP_IP=172.18.0.2
+      - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
+      - REPORT_URL=http://172.20.0.3:8080/report
+      - PEERS_LIMIT=3
+    command: sh -c "sleep 20 && ./agent"
+    ports:
+      - "5020:5000/tcp"
+      - "5020:5000/udp"
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+
+networks:
+  p2p_net:
+    external: true
+  presentation_net:
+    external: true

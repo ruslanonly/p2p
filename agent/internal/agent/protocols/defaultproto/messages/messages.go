@@ -16,6 +16,8 @@ const (
 	NotConnectedAndWaitMessageType       MessageType = "NotConnectedAndWaitMessageType"
 	InitializeElectionRequestMessageType MessageType = "InitializeElectionRequestMessageType"
 	BecomeOnlyOneHubMessageType          MessageType = "BecomeOnlyOneHubMessageType"
+	ICantBecomeOnlyOneHubMessageType     MessageType = "ICantBecomeOnlyOneHubMessageType"
+	IBecameOnlyOneHubMessageType         MessageType = "IBecameOnlyOneHubMessageType"
 	InfoAboutSegmentMessageType          MessageType = "InfoAboutSegmentMessageType"
 	ElectionRequestMessageType           MessageType = "ElectionRequestMessageType"
 

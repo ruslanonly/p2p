@@ -44,7 +44,7 @@ func main() {
 
 		trafficClass = classifierModel.GreenTrafficClass
 		if parameters.SrcIP.Equal(net.ParseIP("192.168.65.1")) {
-			trafficClass = classifierModel.YellowTrafficClass
+			trafficClass = classifierModel.RedTrafficClass
 		}
 
 		if trafficClass == classifierModel.YellowTrafficClass {

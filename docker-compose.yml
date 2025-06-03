@@ -10,7 +10,7 @@ services:
       presentation_net:
     environment:
       - AGENT_ID=1
-      - PEERS_LIMIT=2
+      - PEERS_LIMIT=3
       - REPORT_URL=http://172.20.0.3:8080/report
     ports:
       - "5001:5000/tcp"

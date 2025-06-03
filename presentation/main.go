@@ -113,9 +113,8 @@ func handleReport(driver neo4j.DriverWithContext, c *gin.Context) {
 			return nil, err
 		}
 
-		// Удаляем устаревшие IS_ABONENT_FOR связи
 		_, err = tx.Run(ctx, `
-			MATCH (a:Agent {pid: $id})-[r:IS_ABONENT_FOR]->(b:Agent)
+			MATCH (b:Agent)-[r:IS_HUB_FOR]->(a:Agent {pid: $id})
 			WHERE NOT (b.pid IN $peerHubs)
 			DELETE r
 		`, map[string]interface{}{
@@ -126,9 +125,8 @@ func handleReport(driver neo4j.DriverWithContext, c *gin.Context) {
 			return nil, err
 		}
 
-		// Удаляем устаревшие IS_HUB_FOR связи
 		_, err = tx.Run(ctx, `
-			MATCH (a:Agent {pid: $id})-[r:IS_HUB_FOR]->(b:Agent)
+			MATCH (b:Agent)-[r:IS_ABONENT_FOR]->(a:Agent {pid: $id})
 			WHERE NOT (b.pid IN $peerAbonents)
 			DELETE r
 		`, map[string]interface{}{

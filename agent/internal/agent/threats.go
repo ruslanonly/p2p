@@ -48,6 +48,7 @@ func (a *Agent) threatsStreamHandler(stream libp2pNetwork.Stream) {
 		a.threatsStorage.BlockHost(message.IP, "Просьба хаба")
 	} else if message.Type == threatsprotomessages.RedTrafficMessageType {
 		a.threatsStorage.ReportRedThreat(message.IP, "Просьба хаба")
+		a.RedTrafficHubMessage(message.IP)
 	} else if message.Type == threatsprotomessages.YellowTrafficMessageType {
 		a.threatsStorage.ReportYellowThreat(message.IP, "Просьба хаба")
 		a.YellowTrafficHubMessage(message.IP)

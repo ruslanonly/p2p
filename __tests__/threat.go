@@ -48,7 +48,7 @@ func main() {
 
 	time.Sleep(3 * time.Second)
 
-	targetAddrStr := "/ip4/127.0.0.1/tcp/5010/p2p/12D3KooWA5BqSnQpdpcyqVWVQEixL39yaxNnWud8ZXrYf3TdpkJm"
+	targetAddrStr := "/ip4/127.0.0.1/tcp/5004/p2p/12D3KooWA5BqSnQpdpcyqVWVQEixL39yaxNnWud8ZXrYf3TdpkJm"
 	var info *peer.AddrInfo
 	var connectErr error
 	const retryInterval = 3 * time.Second
@@ -105,7 +105,7 @@ func main() {
 			defer stream.Close()
 
 			for j := 0; j < messagesPerStream; j++ {
-				msg := fmt.Sprintf("ping from stream %d message %d\n", id, j)
+				msg := "BLOCK"
 				_, err := stream.Write([]byte(msg))
 				if err != nil {
 					log.Printf("Stream %d: failed to send message: %v", id, err)

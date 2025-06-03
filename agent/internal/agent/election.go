@@ -34,15 +34,40 @@ func (a *Agent) organizeSegmentHubElection() []peer.ID {
 		break
 	}
 
-	var message defaultprotomessages.Message
 	if len(abonents) == 1 {
 		// Абонент становится хабом сразу, если он единственный абонент в сегменте
-		log.Printf("Отправка сообщения о необходимости стать единственным хабом %s", abonent.ID)
-		message = defaultprotomessages.Message{
+		var message defaultprotomessages.Message = defaultprotomessages.Message{
 			Type: defaultprotomessages.BecomeOnlyOneHubMessageType,
 		}
-		peerIDs = append(peerIDs, abonent.ID)
+
+		log.Printf("❇️ Отправка сообщения о необходимости стать единственным хабом %s", abonent.ID)
+		s, err := a.node.Host.NewStream(context.Background(), abonent.ID, defaultproto.ProtocolID)
+		if err != nil {
+			log.Println(err)
+			return nil
+		}
+
+		if err := json.NewEncoder(s).Encode(message); err != nil {
+			log.Println("Ошибка при отправке запроса:", err)
+			return nil
+		}
+
+		decoder := json.NewDecoder(s)
+		var responseMessage defaultprotomessages.Message
+
+		if err := decoder.Decode(&responseMessage); err != nil {
+			s.Close()
+			return peerIDs
+		}
+
+		if responseMessage.Type == defaultprotomessages.IBecameOnlyOneHubMessageType {
+			peerIDs = append(peerIDs, abonent.ID)
+		}
+
+		s.Close()
 	} else {
+		var message defaultprotomessages.Message
+
 		// Первый абонент из списка абонентов должен являться инициатором выборов среди другого сегмента, о котором он знает
 		log.Printf("Отправка сообщения о необходимости инициализировать выборы среди абонентов сегмента")
 
@@ -73,24 +98,24 @@ func (a *Agent) organizeSegmentHubElection() []peer.ID {
 			Type: defaultprotomessages.InitializeElectionRequestMessageType,
 			Body: marshaledBody,
 		}
+
+		s, err := a.node.Host.NewStream(context.Background(), abonent.ID, defaultproto.ProtocolID)
+		if err != nil {
+			log.Println(err)
+			return nil
+		}
+
+		fmt.Println("❇️ Отправление сообщения для организации выборов")
+
+		if err := json.NewEncoder(s).Encode(message); err != nil {
+			log.Println("Ошибка при отправке запроса:", err)
+			return nil
+		}
+
+		fmt.Println("❇️ Отправлено сообщение для организации выборов")
+
+		s.Close()
 	}
-
-	s, err := a.node.Host.NewStream(context.Background(), abonent.ID, defaultproto.ProtocolID)
-	if err != nil {
-		log.Println(err)
-		return nil
-	}
-
-	fmt.Println("❇️ Отправление сообщения для организации выборов")
-
-	if err := json.NewEncoder(s).Encode(message); err != nil {
-		log.Println("Ошибка при отправке запроса:", err)
-		return nil
-	}
-
-	fmt.Println("❇️ Отправлено сообщение для организации выборов")
-
-	s.Close()
 
 	return peerIDs
 }

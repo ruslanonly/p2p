@@ -599,6 +599,20 @@ func (a *Agent) streamHandler(stream libp2pNetwork.Stream) {
 		err := a.fsm.Event(fsm.BecomeHubAgentFSMEvent)
 		if err != nil {
 			fmt.Println("Я не могу стать хабом: ", err)
+
+			message := defaultprotomessages.Message{
+				Type: defaultprotomessages.ICantBecomeOnlyOneHubMessageType,
+			}
+			if err := json.NewEncoder(stream).Encode(message); err != nil {
+				log.Println("Ошибка при отправке запроса:", err)
+			}
+		} else {
+			message := defaultprotomessages.Message{
+				Type: defaultprotomessages.IBecameOnlyOneHubMessageType,
+			}
+			if err := json.NewEncoder(stream).Encode(message); err != nil {
+				log.Println("Ошибка при отправке запроса:", err)
+			}
 		}
 	} else if msg.Type == defaultprotomessages.InitializeElectionRequestMessageType {
 		var body defaultprotomessages.InitializeElectionRequestMessageBody

@@ -174,6 +174,8 @@ func (a *Agent) RedTrafficHubMessage(offenderIP net.IP) {
 	a.peersMutex.Lock()
 	defer a.peersMutex.Unlock()
 
+	log.Printf("🚨 Отправлено сообщение о красном трафике всем хабам: %s", offenderIP)
+
 	a.hubMessage(
 		hubprotomessages.RedTrafficMessageType,
 		hubprotomessages.MessageBody(offenderIP),
@@ -183,6 +185,8 @@ func (a *Agent) RedTrafficHubMessage(offenderIP net.IP) {
 func (a *Agent) YellowTrafficHubMessage(offenderIP net.IP) {
 	a.peersMutex.Lock()
 	defer a.peersMutex.Unlock()
+
+	log.Printf("🌝 Отправлено сообщение о желтом трафике всем хабам: %s", offenderIP)
 
 	a.hubMessage(
 		hubprotomessages.YellowTrafficMessageType,

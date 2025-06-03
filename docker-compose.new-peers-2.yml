@@ -13,6 +13,9 @@ services:
       - BOOTSTRAP_PEER_ID=12D3KooWSHB3WLC7CcZubYJ8e2Z4N6ewDHEEbWrNTrTwpqJqJ7jR
       - REPORT_URL=http://172.20.0.3:8080/report
       - PEERS_LIMIT=2
+    ports:
+      - "5006:5000/tcp"
+      - "5006:5000/udp"
     cap_add:
       - NET_ADMIN
     privileged: true
@@ -30,6 +33,9 @@ services:
       - REPORT_URL=http://172.20.0.3:8080/report
       - PEERS_LIMIT=2
     command: sh -c "sleep 1 && ./agent"
+    ports:
+      - "5007:5000/tcp"
+      - "5007:5000/udp"
     cap_add:
       - NET_ADMIN
     privileged: true
@@ -47,6 +53,9 @@ services:
       - REPORT_URL=http://172.20.0.3:8080/report
       - PEERS_LIMIT=2
     command: sh -c "sleep 2 && ./agent"
+    ports:
+      - "5008:5000/tcp"
+      - "5008:5000/udp"
     cap_add:
       - NET_ADMIN
     privileged: true
@@ -64,6 +73,9 @@ services:
       - REPORT_URL=http://172.20.0.3:8080/report
       - PEERS_LIMIT=2
     command: sh -c "sleep 3 && ./agent"
+    ports:
+      - "5009:5000/tcp"
+      - "5009:5000/udp"
     cap_add:
       - NET_ADMIN
     privileged: true
@@ -81,6 +93,9 @@ services:
         - REPORT_URL=http://172.20.0.3:8080/report
         - PEERS_LIMIT=2
       command: sh -c "sleep 4 && ./agent"
+      ports:
+        - "5010:5000/tcp"
+        - "5010:5000/udp"
       cap_add:
         - NET_ADMIN
       privileged: true
@@ -98,6 +113,9 @@ services:
         - REPORT_URL=http://172.20.0.3:8080/report
         - PEERS_LIMIT=2
       command: sh -c "sleep 5 && ./agent"
+      ports:
+        - "5011:5000/tcp"
+        - "5011:5000/udp"
       cap_add:
         - NET_ADMIN
       privileged: true
